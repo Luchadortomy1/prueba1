@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, ScrollView, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, ScrollView, Text, TouchableOpacity, Modal } from 'react-native';
 import { COLORS } from '../constants/colors';
 
 const PRODUCTS = [
@@ -128,20 +128,48 @@ interface MenuScreenProps {
   onSelectProduct: (product: any) => void;
   onOpenProductModal: (visible: boolean) => void;
   onChangeScreen: (screen: string) => void;
+  selectedTable: number;
+  onSetTable: (table: number) => void;
+  tableOrders: any;
+  lastOrderData: any;
+  onCancelOrder: () => void;
+  onCheckout: () => void;
 }
 
-export default function MenuScreen({ onSelectProduct, onOpenProductModal, onChangeScreen }: MenuScreenProps) {
+export default function MenuScreen({ 
+  onSelectProduct, 
+  onOpenProductModal, 
+  onChangeScreen,
+  selectedTable,
+  onSetTable,
+  tableOrders,
+  lastOrderData,
+  onCancelOrder,
+  onCheckout
+}: MenuScreenProps) {
   const [activeCategory, setActiveCategory] = useState('Todo');
+  const [showMenu, setShowMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   const handleProductPress = (product: any) => {
     onSelectProduct(product);
     onOpenProductModal(true);
   };
 
+  const handleRepeatOrder = () => {
+    if (lastOrderData) {
+      // Would repeat the last order with same customizations
+      setShowMenu(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.topbar}>
-        <Text style={styles.topbarTitle}>Menú</Text>
+        <Text style={styles.topbarTitle}>Mesa {selectedTable}</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={() => setShowMenu(true)}>
+          <Text style={styles.menuBtnText}>☰</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView horizontal style={styles.categoriesScroll} showsHorizontalScrollIndicator={false}>
@@ -184,6 +212,69 @@ export default function MenuScreen({ onSelectProduct, onOpenProductModal, onChan
           ))}
         </View>
       </ScrollView>
+
+      {/* Menu Hamburguesa Modal */}
+      <Modal visible={showMenu} transparent animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowMenu(false)}>
+          <View style={styles.menu}>
+            <Text style={styles.menuTitle}>Opciones</Text>
+            
+            <TouchableOpacity style={styles.menuItem} onPress={handleRepeatOrder}>
+              <Text style={styles.menuItemIcon}>🔄</Text>
+              <Text style={styles.menuItemText}>Repetir última orden</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.menuItem} onPress={() => {
+              setShowHistory(true);
+              setShowMenu(false);
+            }}>
+              <Text style={styles.menuItemIcon}>📜</Text>
+              <Text style={styles.menuItemText}>Historial de mesa</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.menuItem} onPress={onCancelOrder}>
+              <Text style={styles.menuItemIcon}>❌</Text>
+              <Text style={styles.menuItemText}>Cancelar última orden</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={[styles.menuItem, styles.menuItemDanger]} onPress={() => {
+              onCheckout();
+              setShowMenu(false);
+            }}>
+              <Text style={styles.menuItemIcon}>💳</Text>
+              <Text style={styles.menuItemText}>Cerrar cuenta</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* History Modal */}
+      <Modal visible={showHistory} transparent animationType="slide">
+        <View style={styles.historyContainer}>
+          <View style={styles.historyHeader}>
+            <TouchableOpacity onPress={() => setShowHistory(false)}>
+              <Text style={styles.historyBackBtn}>← Volver</Text>
+            </TouchableOpacity>
+            <Text style={styles.historyTitle}>Historial - Mesa {selectedTable}</Text>
+            <View style={{ width: 50 }} />
+          </View>
+          
+          <ScrollView style={styles.historyList}>
+            {tableOrders[selectedTable]?.history?.length > 0 ? (
+              tableOrders[selectedTable].history.map((order: any, idx: number) => (
+                <View key={idx} style={styles.historyItem}>
+                  <Text style={styles.historyTime}>
+                    {order.timestamp?.toLocaleTimeString()}
+                  </Text>
+                  <Text style={styles.historyTotal}>${order.total}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.historyEmpty}>Sin historial</Text>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -209,7 +300,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     flex: 1,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   categoriesScroll: {
     backgroundColor: COLORS.background,
@@ -316,5 +407,115 @@ const styles = StyleSheet.create({
     color: COLORS.textPrimary,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  menuBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBtnText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  menu: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 16,
+    paddingTop: 20,
+    minWidth: 250,
+    maxWidth: 300,
+  },
+  menuTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderRadius: 10,
+    backgroundColor: '#1a1a1a',
+    gap: 12,
+  },
+  menuItemDanger: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderWidth: 1,
+  },
+  menuItemIcon: {
+    fontSize: 18,
+  },
+  menuItemText: {
+    color: COLORS.textPrimary,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  historyContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    paddingTop: 24,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderBottomColor: COLORS.border,
+    borderBottomWidth: 0.5,
+  },
+  historyBackBtn: {
+    color: COLORS.accent,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  historyTitle: {
+    color: COLORS.textPrimary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  historyList: {
+    padding: 16,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+  },
+  historyTime: {
+    color: '#888',
+    fontSize: 12,
+  },
+  historyTotal: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  historyEmpty: {
+    color: '#666',
+    textAlign: 'center',
+    fontSize: 13,
+    marginTop: 20,
   },
 });

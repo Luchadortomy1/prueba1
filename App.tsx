@@ -9,18 +9,92 @@ import KitchenScreen from './screens/KitchenScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import ProductModal from './modals/ProductModal';
 import CheckoutModal from './modals/CheckoutModal';
+import OrderDetailModal from './modals/OrderDetailModal';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('menu');
-  const [cartCount, setCartCount] = useState(0);
-  const [cartTotal, setCartTotal] = useState(0);
+  const [tableCartItems, setTableCartItems] = useState<{[key: number]: any[]}>({});
   const [showProductModal, setShowProductModal] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedTable, setSelectedTable] = useState(3);
+  const [tableOrders, setTableOrders] = useState({
+    3: { items: [], history: [] }
+  });
+  const [lastOrderData, setLastOrderData] = useState(null);
 
-  const handleAddToCart = (qty, price) => {
-    setCartCount(cartCount + qty);
-    setCartTotal(cartTotal + price * qty);
+  const cartItems = tableCartItems[selectedTable] || [];
+  const cartCount = cartItems.length;
+  const cartTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+  const handleAddToCart = (qty, price, productName = '', customizationText = '') => {
+    const itemId = `${productName}-${Date.now()}`;
+    const newItem = {
+      id: itemId,
+      name: productName,
+      qty: qty,
+      price: price,
+      customizationText: customizationText // e.g., "Cheddar, Sin cebolla"
+    };
+    
+    const updatedCartItems = [...(tableCartItems[selectedTable] || []), newItem];
+    setTableCartItems({
+      ...tableCartItems,
+      [selectedTable]: updatedCartItems
+    });
+    
+    // Store order data for repeat functionality
+    if (productName) {
+      setLastOrderData({ qty, price, productName, customizationText });
+    }
+  };
+
+  const handleRemoveFromCart = (itemId: string) => {
+    const updatedCartItems = cartItems.filter(item => item.id !== itemId);
+    setTableCartItems({
+      ...tableCartItems,
+      [selectedTable]: updatedCartItems
+    });
+  };
+
+  const handleSendOrder = () => {
+    if (cartItems.length === 0) return;
+    
+    // Add items to table orders with status
+    const currentTable = tableOrders[selectedTable] || { items: [], history: [] };
+    
+    // Create kitchen order with status
+    const kitchenOrder = {
+      id: `order-${selectedTable}-${Date.now()}`,
+      table: selectedTable,
+      items: cartItems.map(item => ({
+        ...item,
+        status: 'pending' // 'pending' | 'prep' | 'ready' | 'delivered'
+      })),
+      timestamp: Date.now(),
+      status: 'pending'
+    };
+    
+    const updatedItems = [...(currentTable.items || []), kitchenOrder];
+    
+    setTableOrders({
+      ...tableOrders,
+      [selectedTable]: {
+        items: updatedItems,
+        history: currentTable.history || []
+      }
+    });
+    
+    // Clear cart for this table
+    setTableCartItems({
+      ...tableCartItems,
+      [selectedTable]: []
+    });
+    setShowOrderDetailModal(false);
+    
+    // Show confirmation
+    alert(`Orden enviada a cocina · Mesa ${selectedTable}`);
   };
 
   const handleCheckout = () => {
@@ -28,9 +102,48 @@ export default function App() {
   };
 
   const handleConfirmPay = () => {
-    setCartCount(0);
-    setCartTotal(0);
+    // Get current table data, initialize if it doesn't exist
+    const currentTable = tableOrders[selectedTable] || { items: [], history: [] };
+    const newHistory = [...(currentTable.history || [])];
+    
+    // Calculate total from current orders/items
+    const totalFromOrders = currentTable.items.reduce((sum: number, order: any) => {
+      return sum + order.items.reduce((itemSum: number, item: any) => {
+        return itemSum + (item.price * item.qty);
+      }, 0);
+    }, 0);
+    
+    newHistory.push({
+      id: `history-${selectedTable}-${Date.now()}`,
+      timestamp: Date.now(),
+      items: currentTable.items,
+      total: totalFromOrders,
+      paymentMethod: 'efectivo' // We'll pass this from CheckoutModal later
+    });
+    
+    setTableOrders({
+      ...tableOrders,
+      [selectedTable]: {
+        items: [],
+        history: newHistory
+      }
+    });
+    
+    setTableCartItems({
+      ...tableCartItems,
+      [selectedTable]: []
+    });
     setShowCheckoutModal(false);
+    alert(`Cuenta cerrada · Mesa ${selectedTable}`);
+  };
+
+  const handleCancelLastOrder = () => {
+    if (cartItems.length > 0) {
+      setTableCartItems({
+        ...tableCartItems,
+        [selectedTable]: []
+      });
+    }
   };
 
   return (
@@ -38,9 +151,39 @@ export default function App() {
       <StatusBar barStyle="light-content" />
       
       {/* Pantalla actual */}
-      {currentScreen === 'menu' && <MenuScreen onSelectProduct={setSelectedProduct} onOpenProductModal={setShowProductModal} onChangeScreen={setCurrentScreen} />}
-      {currentScreen === 'tables' && <TablesScreen onChangeScreen={setCurrentScreen} />}
-      {currentScreen === 'kitchen' && <KitchenScreen onChangeScreen={setCurrentScreen} />}
+      {currentScreen === 'menu' && <MenuScreen 
+        onSelectProduct={setSelectedProduct} 
+        onOpenProductModal={setShowProductModal} 
+        onChangeScreen={setCurrentScreen}
+        selectedTable={selectedTable}
+        onSetTable={setSelectedTable}
+        tableOrders={tableOrders}
+        lastOrderData={lastOrderData}
+        onCancelOrder={handleCancelLastOrder}
+        onCheckout={handleCheckout}
+      />}
+      {currentScreen === 'tables' && <TablesScreen 
+        onChangeScreen={setCurrentScreen}
+        selectedTable={selectedTable}
+        onSelectTable={setSelectedTable}
+      />}
+      {currentScreen === 'kitchen' && <KitchenScreen 
+        onChangeScreen={setCurrentScreen}
+        tableOrders={tableOrders}
+        onUpdateOrderStatus={(mesa, orderId, newStatus) => {
+          const currentTable = tableOrders[mesa] || { items: [], history: [] };
+          const updatedItems = currentTable.items.map((order: any) => 
+            order.id === orderId ? { ...order, status: newStatus } : order
+          );
+          setTableOrders({
+            ...tableOrders,
+            [mesa]: {
+              ...currentTable,
+              items: updatedItems
+            }
+          });
+        }}
+      />}
       {currentScreen === 'dashboard' && <DashboardScreen onChangeScreen={setCurrentScreen} />}
 
       {/* Modales */}
@@ -54,20 +197,30 @@ export default function App() {
       <CheckoutModal
         visible={showCheckoutModal}
         cartTotal={cartTotal}
+        selectedTable={selectedTable}
         onClose={() => setShowCheckoutModal(false)}
         onConfirm={handleConfirmPay}
+      />
+
+      <OrderDetailModal
+        visible={showOrderDetailModal}
+        items={cartItems}
+        selectedTable={selectedTable}
+        onClose={() => setShowOrderDetailModal(false)}
+        onRemoveItem={handleRemoveFromCart}
+        onSendOrder={handleSendOrder}
       />
 
       {/* Order Bar - Vista previa del carrito */}
       {cartCount > 0 && (
         <TouchableOpacity 
           style={styles.orderBar}
-          onPress={handleCheckout}
+          onPress={() => setShowOrderDetailModal(true)}
         >
           <View style={styles.orderBarBadge}>
             <Text style={styles.orderBarBadgeText}>{cartCount}</Text>
           </View>
-          <Text style={styles.orderBarLabel}>Ver orden · Mesa 3</Text>
+          <Text style={styles.orderBarLabel}>Orden · Mesa {selectedTable}</Text>
           <Text style={styles.orderBarTotal}>${cartTotal}</Text>
         </TouchableOpacity>
       )}

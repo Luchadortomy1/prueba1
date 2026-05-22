@@ -16,9 +16,14 @@ const TABLES = [
 
 interface TablesScreenProps {
   onChangeScreen: (screen: string) => void;
+  selectedTable: number;
+  onSelectTable: (tableNum: number) => void;
 }
 
-const getTableStyle = (status: string) => {
+const getTableStyle = (status: string, isSelected: boolean) => {
+  if (isSelected) {
+    return { borderColor: COLORS.accent, backgroundColor: 'rgba(124, 58, 237, 0.15)' };
+  }
   switch (status) {
     case 'occupied':
       return { borderColor: '#a78bfa', backgroundColor: '#1c1429' };
@@ -42,17 +47,22 @@ const getStatusColor = (status: string) => {
   }
 };
 
-export default function TablesScreen({ onChangeScreen }: TablesScreenProps) {
+export default function TablesScreen({ onChangeScreen, selectedTable, onSelectTable }: TablesScreenProps) {
   const zones = ['Interior', 'Terraza'];
 
   const renderTable = ({ item }: any) => {
-    const tableStyle = getTableStyle(item.status);
+    const tableNum = parseInt(item.number);
+    const isSelected = selectedTable === tableNum;
+    const tableStyle = getTableStyle(item.status, isSelected);
     const statusColor = getStatusColor(item.status);
 
     return (
       <TouchableOpacity 
         style={[styles.tableCard, tableStyle]}
-        onPress={() => onChangeScreen('menu')}
+        onPress={() => {
+          onSelectTable(tableNum);
+          onChangeScreen('menu');
+        }}
       >
         <Text style={styles.tableNumber}>{item.number}</Text>
         <Text style={[styles.tableStatus, { color: statusColor }]}>

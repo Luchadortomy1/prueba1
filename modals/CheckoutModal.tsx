@@ -5,6 +5,7 @@ import { COLORS } from '../constants/colors';
 interface CheckoutModalProps {
   visible: boolean;
   cartTotal: number;
+  selectedTable?: number;
   onClose: () => void;
   onConfirm: () => void;
 }
@@ -12,11 +13,9 @@ interface CheckoutModalProps {
 const PAYMENT_METHODS = [
   { id: 'cash', icon: '💵', label: 'Efectivo' },
   { id: 'card', icon: '💳', label: 'Tarjeta' },
-  { id: 'transfer', icon: '📱', label: 'Transferencia' },
-  { id: 'mixed', icon: '📊', label: 'Mixto' },
 ];
 
-export default function CheckoutModal({ visible, cartTotal, onClose, onConfirm }: CheckoutModalProps) {
+export default function CheckoutModal({ visible, cartTotal, selectedTable = 3, onClose, onConfirm }: CheckoutModalProps) {
   const [selectedPayment, setSelectedPayment] = useState('cash');
 
   const tax = Math.round(cartTotal * 0.16);
@@ -28,22 +27,14 @@ export default function CheckoutModal({ visible, cartTotal, onClose, onConfirm }
         <View style={styles.sheet}>
           <View style={styles.handle} />
           
-          <Text style={styles.title}>Cobrar · Mesa 3</Text>
+          <Text style={styles.title}>Cobrar · Mesa {selectedTable}</Text>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
             {/* Totals */}
             <View>
               <View style={styles.row}>
-                <Text style={styles.label}>Subtotal</Text>
+                <Text style={styles.label}>Total (IVA incluido)</Text>
                 <Text style={styles.value}>${cartTotal}</Text>
-              </View>
-              <View style={styles.row}>
-                <Text style={styles.label}>IVA 16%</Text>
-                <Text style={styles.value}>${tax}</Text>
-              </View>
-              <View style={[styles.row, styles.rowTotal]}>
-                <Text style={styles.labelTotal}>Total</Text>
-                <Text style={styles.valueTotal}>${total}</Text>
               </View>
             </View>
 
@@ -67,8 +58,11 @@ export default function CheckoutModal({ visible, cartTotal, onClose, onConfirm }
             </View>
           </ScrollView>
 
-          {/* Confirm Button */}
+          {/* Action Buttons */}
           <View style={styles.actions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm}>
               <Text style={styles.confirmBtnText}>Confirmar cobro</Text>
             </TouchableOpacity>
@@ -184,6 +178,18 @@ const styles = StyleSheet.create({
   },
   actions: {
     paddingHorizontal: 16,
+    gap: 10,
+  },
+  cancelBtn: {
+    backgroundColor: COLORS.danger,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: COLORS.textPrimary,
+    fontSize: 15,
+    fontWeight: '500',
   },
   confirmBtn: {
     backgroundColor: COLORS.success,

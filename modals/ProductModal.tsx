@@ -6,7 +6,7 @@ interface ProductModalProps {
   visible: boolean;
   product: any;
   onClose: () => void;
-  onAddToCart: (qty: number, price: number) => void;
+  onAddToCart: (qty: number, price: number, productName?: string) => void;
 }
 
 export default function ProductModal({ visible, product, onClose, onAddToCart }: ProductModalProps) {
@@ -49,23 +49,32 @@ export default function ProductModal({ visible, product, onClose, onAddToCart }:
 
   const handleAddToCart = () => {
     let optionsPricePerUnit = 0;
+    let customizationText = '';
     
     if (product.customizations) {
+      const customItems: string[] = [];
+      
       product.customizations.forEach((customization: any, custIdx: number) => {
         // Add selected option price (required)
         if (customization.required && selectedOptions[custIdx] !== undefined) {
+          const optionName = customization.options[selectedOptions[custIdx]].name;
           optionsPricePerUnit += customization.options[selectedOptions[custIdx]].price;
+          customItems.push(optionName);
         }
         // Add selected extras prices (optional)
         if (!customization.required && selectedExtras[custIdx]) {
           selectedExtras[custIdx].forEach((optIdx: number) => {
+            const optionName = customization.options[optIdx].name;
             optionsPricePerUnit += customization.options[optIdx].price;
+            customItems.push(optionName);
           });
         }
       });
+      
+      customizationText = customItems.join(', ');
     }
     
-    onAddToCart(qty, product.price + optionsPricePerUnit);
+    onAddToCart(qty, product.price + optionsPricePerUnit, product.name, customizationText);
     onClose();
     setQty(1);
     setSelectedOptions({});
@@ -162,7 +171,7 @@ export default function ProductModal({ visible, product, onClose, onAddToCart }:
               <Text style={styles.cancelBtnText}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.addBtn} onPress={handleAddToCart}>
-              <Text style={styles.addBtnText}>Agregar · ${calculatePrice()}</Text>
+              <Text style={styles.addBtnText}>Agregar a orden</Text>
             </TouchableOpacity>
           </View>
         </View>
