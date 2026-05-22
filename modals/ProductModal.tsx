@@ -6,7 +6,7 @@ interface ProductModalProps {
   visible: boolean;
   product: any;
   onClose: () => void;
-  onAddToCart: (qty: number, price: number, productName?: string) => void;
+  onAddToCart: (qty: number, price: number, productName?: string, customizationText?: string) => void;
 }
 
 export default function ProductModal({ visible, product, onClose, onAddToCart }: ProductModalProps) {

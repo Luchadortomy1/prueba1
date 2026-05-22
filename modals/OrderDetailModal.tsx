@@ -7,6 +7,7 @@ interface OrderItem {
   name: string;
   qty: number;
   price: number;
+  customizationText?: string;
   customizations?: any[];
 }
 

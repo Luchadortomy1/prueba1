@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, View, ScrollView, Text, TouchableOpacity, Modal } from 'react-native';
 import { COLORS } from '../constants/colors';
+import HistoryDetailModal from '../modals/HistoryDetailModal';
 
 const PRODUCTS = [
   { 
@@ -133,8 +134,7 @@ interface MenuScreenProps {
   tableOrders: any;
   lastOrderData: any;
   onCancelOrder: () => void;
-  onCheckout: () => void;
-}
+  onCheckout: () => void;  onRepeatOrder: () => void;}
 
 export default function MenuScreen({ 
   onSelectProduct, 
@@ -145,11 +145,13 @@ export default function MenuScreen({
   tableOrders,
   lastOrderData,
   onCancelOrder,
-  onCheckout
+  onCheckout,
+  onRepeatOrder
 }: MenuScreenProps) {
   const [activeCategory, setActiveCategory] = useState('Todo');
   const [showMenu, setShowMenu] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any>(null);
 
   const handleProductPress = (product: any) => {
     onSelectProduct(product);
@@ -157,10 +159,8 @@ export default function MenuScreen({
   };
 
   const handleRepeatOrder = () => {
-    if (lastOrderData) {
-      // Would repeat the last order with same customizations
-      setShowMenu(false);
-    }
+    onRepeatOrder();
+    setShowMenu(false);
   };
 
   return (
@@ -262,12 +262,16 @@ export default function MenuScreen({
           <ScrollView style={styles.historyList}>
             {tableOrders[selectedTable]?.history?.length > 0 ? (
               tableOrders[selectedTable].history.map((order: any, idx: number) => (
-                <View key={idx} style={styles.historyItem}>
+                <TouchableOpacity
+                  key={idx}
+                  style={styles.historyItem}
+                  onPress={() => setSelectedHistoryEntry(order)}
+                >
                   <Text style={styles.historyTime}>
-                    {order.timestamp?.toLocaleTimeString()}
+                    {new Date(order.timestamp).toLocaleTimeString()}
                   </Text>
                   <Text style={styles.historyTotal}>${order.total}</Text>
-                </View>
+                </TouchableOpacity>
               ))
             ) : (
               <Text style={styles.historyEmpty}>Sin historial</Text>
@@ -275,6 +279,13 @@ export default function MenuScreen({
           </ScrollView>
         </View>
       </Modal>
+
+      {/* History Detail Modal */}
+      <HistoryDetailModal
+        visible={selectedHistoryEntry !== null}
+        historyEntry={selectedHistoryEntry}
+        onClose={() => setSelectedHistoryEntry(null)}
+      />
     </View>
   );
 }

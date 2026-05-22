@@ -19,16 +19,27 @@ export default function App() {
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedTable, setSelectedTable] = useState(3);
-  const [tableOrders, setTableOrders] = useState({
+  const [tableOrders, setTableOrders] = useState<{[key: number]: { items: any[], history: any[] }}>({
     3: { items: [], history: [] }
   });
-  const [lastOrderData, setLastOrderData] = useState(null);
+  const [lastOrderData, setLastOrderData] = useState<any>(null);
 
   const cartItems = tableCartItems[selectedTable] || [];
   const cartCount = cartItems.length;
   const cartTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  
+  // Calculate checkout total: cart items + orders in kitchen
+  const currentTableOrders = tableOrders[selectedTable] || { items: [], history: [] };
+  const kitchenTotal = currentTableOrders.items.reduce((sum: number, order: any) => {
+    return sum + order.items.reduce((itemSum: number, item: any) => {
+      return itemSum + (item.price * item.qty);
+    }, 0);
+  }, 0);
+  
+  // Checkout should show total of both cart and kitchen orders
+  const checkoutTotal = cartTotal + kitchenTotal;
 
-  const handleAddToCart = (qty, price, productName = '', customizationText = '') => {
+  const handleAddToCart = (qty: number, price: number, productName: string = '', customizationText: string = '') => {
     const itemId = `${productName}-${Date.now()}`;
     const newItem = {
       id: itemId,
@@ -102,23 +113,32 @@ export default function App() {
   };
 
   const handleConfirmPay = () => {
-    // Get current table data, initialize if it doesn't exist
+    // Get current table data
     const currentTable = tableOrders[selectedTable] || { items: [], history: [] };
     const newHistory = [...(currentTable.history || [])];
     
-    // Calculate total from current orders/items
+    // Calculate total from kitchen orders
     const totalFromOrders = currentTable.items.reduce((sum: number, order: any) => {
       return sum + order.items.reduce((itemSum: number, item: any) => {
         return itemSum + (item.price * item.qty);
       }, 0);
     }, 0);
     
+    // Total to save: cart items + kitchen items
+    const totalToSave = cartTotal + totalFromOrders;
+    
+    // Items to save should include both cart items and kitchen orders
+    const itemsToSave = [
+      ...cartItems,
+      ...currentTable.items
+    ];
+    
     newHistory.push({
       id: `history-${selectedTable}-${Date.now()}`,
       timestamp: Date.now(),
-      items: currentTable.items,
-      total: totalFromOrders,
-      paymentMethod: 'efectivo' // We'll pass this from CheckoutModal later
+      items: itemsToSave,
+      total: totalToSave,
+      paymentMethod: 'efectivo'
     });
     
     setTableOrders({
@@ -146,9 +166,25 @@ export default function App() {
     }
   };
 
+  const handleRepeatOrder = () => {
+    if (!lastOrderData) {
+      alert('No hay orden anterior');
+      return;
+    }
+    
+    // Add the last order data to cart
+    handleAddToCart(
+      lastOrderData.qty,
+      lastOrderData.price,
+      lastOrderData.productName,
+      lastOrderData.customizationText
+    );
+    alert(`Orden de ${lastOrderData.productName} agregada`);
+  };
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar hidden={false} />
       
       {/* Pantalla actual */}
       {currentScreen === 'menu' && <MenuScreen 
@@ -161,6 +197,7 @@ export default function App() {
         lastOrderData={lastOrderData}
         onCancelOrder={handleCancelLastOrder}
         onCheckout={handleCheckout}
+        onRepeatOrder={handleRepeatOrder}
       />}
       {currentScreen === 'tables' && <TablesScreen 
         onChangeScreen={setCurrentScreen}
@@ -196,7 +233,7 @@ export default function App() {
 
       <CheckoutModal
         visible={showCheckoutModal}
-        cartTotal={cartTotal}
+        cartTotal={checkoutTotal}
         selectedTable={selectedTable}
         onClose={() => setShowCheckoutModal(false)}
         onConfirm={handleConfirmPay}
