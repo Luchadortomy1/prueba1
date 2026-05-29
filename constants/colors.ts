@@ -1,15 +1,18 @@
 export const COLORS = {
-  primary: '#ff6b2c',
-  accent: '#7c3aed',
-  background: '#111',
-  surface: '#1a1a1a',
-  surfaceAlt: '#1e1e1e',
-  border: '#2a2a2a',
-  textPrimary: '#fff',
-  textSecondary: '#ccc',
-  textTertiary: '#888',
-  textMuted: '#555',
-  success: '#10b981',
-  warning: '#f59e0b',
-  danger: '#ef4444',
+  primary: '#FFD700', // Amarillo dorado para botones principales
+  accent: '#FF6B35', // Naranja-rojo para acentos
+  background: '#F8F9FA', // Gris muy claro
+  surface: '#FFFFFF', // Blanco puro
+  surfaceAlt: '#F5F5F5', // Gris claro alternativo
+  border: '#DDDDDD', // Gris para bordes
+  textPrimary: '#1A1A1A', // Gris oscuro para texto
+  textSecondary: '#555555', // Gris medio
+  textTertiary: '#888888', // Gris medio-claro
+  textMuted: '#AAAAAA', // Gris claro
+  success: '#27AE60', // Verde brillante para confirmar
+  warning: '#FF9800', // Naranja para advertencias
+  danger: '#E74C3C', // Rojo para eliminar
+  buttonGreen: '#2ECC71', // Verde brillante
+  buttonBlue: '#3498DB', // Azul
+  buttonRed: '#E74C3C', // Rojo
 };

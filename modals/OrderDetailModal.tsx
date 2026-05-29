@@ -8,7 +8,6 @@ interface OrderItem {
   qty: number;
   price: number;
   customizationText?: string;
-  customizations?: any[];
 }
 
 interface OrderDetailModalProps {
@@ -20,25 +19,17 @@ interface OrderDetailModalProps {
   onSendOrder: () => void;
 }
 
-export default function OrderDetailModal({ 
-  visible, 
-  items, 
-  selectedTable = 3, 
-  onClose, 
-  onRemoveItem,
-  onSendOrder 
-}: OrderDetailModalProps) {
+export default function OrderDetailModal(props: Readonly<OrderDetailModalProps>) {
+  const { visible, items, selectedTable = 0, onClose, onRemoveItem, onSendOrder } = props;
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  const tax = Math.round(subtotal * 0.16);
-  const total = subtotal + tax;
+  const total = subtotal;
 
   return (
     <Modal visible={visible} transparent animationType="slide">
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <View style={styles.handle} />
-          
-          <Text style={styles.title}>Orden · Mesa {selectedTable}</Text>
+          <Text style={styles.title}>📋 Detalle Orden</Text>
+          <Text style={styles.subtitle}>Mesa {selectedTable}</Text>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
             {items.length === 0 ? (
@@ -48,55 +39,39 @@ export default function OrderDetailModal({
                 {items.map((item) => (
                   <View key={item.id} style={styles.itemCard}>
                     <View style={styles.itemInfo}>
-                      <Text style={styles.itemName}>{item.name}</Text>
-                      {item.customizationText && (
-                        <Text style={styles.itemCustom}>{item.customizationText}</Text>
-                      )}
-                      <Text style={styles.itemQty}>x{item.qty}</Text>
-                    </View>
-                    <View style={styles.itemRight}>
-                      <Text style={styles.itemPrice}>${item.price * item.qty}</Text>
-                      <TouchableOpacity 
-                        style={styles.deleteBtn}
-                        onPress={() => onRemoveItem(item.id)}
-                      >
-                        <Text style={styles.deleteBtnText}>✕</Text>
+                      <View>
+                        <Text style={styles.itemName}>{item.name}</Text>
+                        {item.customizationText && <Text style={styles.itemCustomization}>{item.customizationText}</Text>}
+                        <Text style={styles.itemPrice}>${item.price} x {item.qty} = ${item.price * item.qty}</Text>
+                      </View>
+                      <TouchableOpacity style={styles.removeBtn} onPress={() => onRemoveItem(item.id)}>
+                        <Text style={styles.removeBtnText}>🗑️</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
                 ))}
               </View>
             )}
-
-            {/* Totals */}
-            {items.length > 0 && (
-              <View style={styles.totalsSection}>
-                <View style={styles.row}>
-                  <Text style={styles.label}>Subtotal</Text>
-                  <Text style={styles.value}>${subtotal}</Text>
-                </View>
-                <View style={styles.row}>
-                  <Text style={styles.label}>IVA 16%</Text>
-                  <Text style={styles.value}>${tax}</Text>
-                </View>
-                <View style={[styles.row, styles.rowTotal]}>
-                  <Text style={styles.labelTotal}>Total</Text>
-                  <Text style={styles.valueTotal}>${total}</Text>
-                </View>
-              </View>
-            )}
           </ScrollView>
 
-          {/* Action Buttons */}
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <Text style={styles.closeBtnText}>Volver</Text>
+          <View style={styles.totalsSection}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>${subtotal}</Text>
+            </View>
+            <View style={[styles.totalRow, styles.totalRowBold]}>
+              <Text style={styles.totalLabelBold}>Total</Text>
+              <Text style={styles.totalValueBold}>${total}</Text>
+            </View>
+          </View>
+
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity style={[styles.button, styles.closeBtn]} onPress={onClose}>
+              <Text style={styles.closeBtnText}>Cerrar</Text>
             </TouchableOpacity>
-            {items.length > 0 && (
-              <TouchableOpacity style={styles.sendBtn} onPress={onSendOrder}>
-                <Text style={styles.sendBtnText}>Mandar Orden →</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={[styles.button, styles.sendBtn, items.length === 0 && styles.sendBtnDisabled]} onPress={onSendOrder} disabled={items.length === 0}>
+              <Text style={styles.sendBtnText}>Enviar a Cocina</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -105,160 +80,31 @@ export default function OrderDetailModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-    maxHeight: '90%',
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    backgroundColor: '#333',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginVertical: 10,
-  },
-  title: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '500',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomColor: COLORS.border,
-    borderBottomWidth: 0.5,
-    marginBottom: 14,
-  },
-  body: {
-    paddingHorizontal: 16,
-    marginBottom: 14,
-  },
-  emptyText: {
-    color: '#888',
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 30,
-  },
-  itemCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 8,
-    borderColor: COLORS.border,
-    borderWidth: 0.5,
-  },
-  itemInfo: {
-    flex: 1,
-    marginRight: 10,
-  },
-  itemName: {
-    color: COLORS.textPrimary,
-    fontSize: 13,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  itemCustom: {
-    color: '#888',
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  itemQty: {
-    color: '#888',
-    fontSize: 11,
-  },
-  itemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  itemPrice: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  deleteBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.danger,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deleteBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  totalsSection: {
-    marginTop: 16,
-    paddingTop: 12,
-    borderTopColor: COLORS.border,
-    borderTopWidth: 0.5,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  rowTotal: {
-    marginTop: 4,
-  },
-  label: {
-    color: '#888',
-    fontSize: 12,
-  },
-  labelTotal: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  value: {
-    color: '#ccc',
-    fontSize: 12,
-  },
-  valueTotal: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  actions: {
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  closeBtn: {
-    flex: 1,
-    backgroundColor: COLORS.border,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  closeBtnText: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  sendBtn: {
-    flex: 1,
-    backgroundColor: COLORS.success,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sendBtnText: {
-    color: COLORS.textPrimary,
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: COLORS.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%', paddingTop: 20 },
+  title: { fontSize: 20, fontWeight: 'bold', color: COLORS.textPrimary, textAlign: 'center', marginBottom: 5 },
+  subtitle: { fontSize: 12, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 15 },
+  body: { paddingHorizontal: 15, maxHeight: '50%' },
+  emptyText: { textAlign: 'center', color: COLORS.textTertiary, fontSize: 14, marginVertical: 20 },
+  itemCard: { backgroundColor: COLORS.background, borderRadius: 10, marginBottom: 10, padding: 12, borderColor: COLORS.border, borderWidth: 1 },
+  itemInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  itemName: { fontSize: 13, fontWeight: 'bold', color: COLORS.textPrimary, marginBottom: 4 },
+  itemCustomization: { fontSize: 11, color: COLORS.accent, fontStyle: 'italic', marginBottom: 4, fontWeight: '500' },
+  itemPrice: { fontSize: 12, color: COLORS.textSecondary },
+  removeBtn: { width: 32, height: 32, borderRadius: 6, backgroundColor: COLORS.danger + '20', justifyContent: 'center', alignItems: 'center' },
+  removeBtnText: { fontSize: 14 },
+  totalsSection: { backgroundColor: COLORS.background, marginHorizontal: 15, marginVertical: 15, borderRadius: 12, padding: 12 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomColor: COLORS.border, borderBottomWidth: 0.5 },
+  totalRowBold: { borderBottomWidth: 0, borderTopColor: COLORS.border, borderTopWidth: 1, marginTop: 5, paddingTop: 10 },
+  totalLabel: { fontSize: 13, color: COLORS.textSecondary },
+  totalLabelBold: { fontSize: 14, fontWeight: 'bold', color: COLORS.textPrimary },
+  totalValue: { fontSize: 13, fontWeight: '600', color: COLORS.textPrimary },
+  totalValueBold: { fontSize: 18, fontWeight: 'bold', color: COLORS.buttonGreen },
+  buttonsContainer: { flexDirection: 'row', gap: 10, paddingHorizontal: 15, paddingVertical: 12, borderTopColor: COLORS.border, borderTopWidth: 1 },
+  button: { flex: 1, paddingVertical: 12, borderRadius: 10 },
+  closeBtn: { backgroundColor: COLORS.border },
+  closeBtnText: { color: COLORS.textPrimary, textAlign: 'center', fontWeight: 'bold', fontSize: 13 },
+  sendBtn: { backgroundColor: COLORS.buttonGreen },
+  sendBtnDisabled: { opacity: 0.5 },
+  sendBtnText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 13 },
 });

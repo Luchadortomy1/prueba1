@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Modal, ScrollView, Text, TouchableOpacity } from 'react-native';
+﻿import React, { useState } from 'react';
+import { StyleSheet, View, Modal, Text, TouchableOpacity } from 'react-native';
 import { COLORS } from '../constants/colors';
 
 interface CheckoutModalProps {
@@ -8,6 +8,8 @@ interface CheckoutModalProps {
   selectedTable?: number;
   onClose: () => void;
   onConfirm: () => void;
+  onRefresh?: () => Promise<number>;
+  serverTotal?: number;
 }
 
 const PAYMENT_METHODS = [
@@ -15,56 +17,83 @@ const PAYMENT_METHODS = [
   { id: 'card', icon: '💳', label: 'Tarjeta' },
 ];
 
-export default function CheckoutModal({ visible, cartTotal, selectedTable = 3, onClose, onConfirm }: CheckoutModalProps) {
+export default function CheckoutModal({ visible, cartTotal, selectedTable = 0, onClose, onConfirm, onRefresh, serverTotal: serverTotalProp }: CheckoutModalProps) {
   const [selectedPayment, setSelectedPayment] = useState('cash');
+  const [serverTotalLocal, setServerTotalLocal] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const tax = Math.round(cartTotal * 0.16);
-  const total = cartTotal + tax;
+  const subtotalLocal = cartTotal;
+  const displayedServerTotal = typeof serverTotalProp === 'number' ? serverTotalProp : serverTotalLocal;
+  const subtotal = subtotalLocal + (displayedServerTotal || 0);
+  const total = subtotal;
+
+  const handleRefresh = async () => {
+    if (!onRefresh) return;
+    try {
+      setRefreshing(true);
+      const val = await onRefresh();
+      setServerTotalLocal(Number(val || 0));
+    } catch (err) {
+      console.log('Error refreshing checkout total:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <View style={styles.handle} />
-          
-          <Text style={styles.title}>Cobrar · Mesa {selectedTable}</Text>
+          <Text style={styles.title}>Cobrar</Text>
+          <Text style={styles.subtitle}>Mesa {selectedTable}</Text>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-            {/* Totals */}
-            <View>
-              <View style={styles.row}>
-                <Text style={styles.label}>Total (IVA incluido)</Text>
-                <Text style={styles.value}>${cartTotal}</Text>
+          <View style={styles.totalsSection}>
+            {displayedServerTotal > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>En cocina</Text>
+                <Text style={styles.totalValue}>${displayedServerTotal.toFixed(2)}</Text>
               </View>
+            )}
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>${subtotal.toFixed(2)}</Text>
             </View>
-
-            {/* Payment Methods */}
-            <View style={{ marginTop: 14 }}>
-              <Text style={styles.groupTitle}>Método de pago</Text>
-              <View style={styles.paymentGrid}>
-                {PAYMENT_METHODS.map((method) => (
-                  <TouchableOpacity
-                    key={method.id}
-                    style={[styles.paymentBtn, selectedPayment === method.id && styles.paymentBtnSelected]}
-                    onPress={() => setSelectedPayment(method.id)}
-                  >
-                    <Text style={styles.paymentIcon}>{method.icon}</Text>
-                    <Text style={[styles.paymentLabel, selectedPayment === method.id && styles.paymentLabelSelected]}>
-                      {method.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+            <View style={[styles.totalRow, styles.totalRowBold]}>
+              <Text style={styles.totalLabelBold}>Total</Text>
+              <Text style={styles.totalValueBold}>${total.toFixed(2)}</Text>
             </View>
-          </ScrollView>
+          </View>
 
-          {/* Action Buttons */}
-          <View style={styles.actions}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+          <View style={styles.paymentSection}>
+            <Text style={styles.sectionTitle}>Método de pago</Text>
+            <View style={styles.paymentGrid}>
+              {PAYMENT_METHODS.map((method) => (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[styles.paymentBtn, selectedPayment === method.id && styles.paymentBtnSelected]}
+                  onPress={() => setSelectedPayment(method.id)}
+                >
+                  <Text style={styles.paymentIcon}>{method.icon}</Text>
+                  <Text style={[styles.paymentLabel, selectedPayment === method.id && styles.paymentLabelSelected]}>
+                    {method.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={{ marginBottom: 12 }}>
+            <TouchableOpacity style={[styles.button, { backgroundColor: '#eee', marginBottom: 8 }]} onPress={handleRefresh} disabled={!onRefresh || refreshing}>
+              <Text style={{ fontWeight: '700' }}>{refreshing ? 'Actualizando...' : 'Refrescar Totales'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.buttonsContainer}>
+            <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancelar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm}>
-              <Text style={styles.confirmBtnText}>Confirmar cobro</Text>
+            <TouchableOpacity style={[styles.button, styles.confirmBtn]} onPress={onConfirm}>
+              <Text style={styles.confirmBtnText}>Confirmar Cobro</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -74,132 +103,29 @@ export default function CheckoutModal({ visible, cartTotal, selectedTable = 3, o
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
-  },
-  sheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-    maxHeight: '90%',
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    backgroundColor: '#333',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginVertical: 10,
-  },
-  title: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '500',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomColor: COLORS.border,
-    borderBottomWidth: 0.5,
-    marginBottom: 14,
-  },
-  body: {
-    paddingHorizontal: 16,
-    marginBottom: 14,
-  },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomColor: '#222',
-    borderBottomWidth: 0.5,
-  },
-  rowTotal: {
-    borderBottomWidth: 0,
-  },
-  label: {
-    color: '#888',
-    fontSize: 13,
-  },
-  labelTotal: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  value: {
-    color: '#ccc',
-    fontSize: 13,
-  },
-  valueTotal: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '500',
-  },
-  groupTitle: {
-    color: '#888',
-    fontSize: 11,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  paymentGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  paymentBtn: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: '#252525',
-    borderColor: '#2e2e2e',
-    borderWidth: 1.5,
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    gap: 6,
-  },
-  paymentBtnSelected: {
-    backgroundColor: 'rgba(255, 107, 44, 0.15)',
-    borderColor: COLORS.primary,
-  },
-  paymentIcon: {
-    fontSize: 22,
-    color: '#666',
-  },
-  paymentLabel: {
-    fontSize: 11,
-    color: '#888',
-  },
-  paymentLabelSelected: {
-    color: COLORS.primary,
-  },
-  actions: {
-    paddingHorizontal: 16,
-    gap: 10,
-  },
-  cancelBtn: {
-    backgroundColor: COLORS.danger,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  cancelBtnText: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  confirmBtn: {
-    backgroundColor: COLORS.success,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  confirmBtnText: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '500',
-  },
+  overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'center', alignItems: 'center' },
+  sheet: { backgroundColor: COLORS.surface, borderRadius: 15, padding: 25, width: '90%', maxWidth: 400 },
+  title: { fontSize: 24, fontWeight: 'bold', color: COLORS.textPrimary, textAlign: 'center', marginBottom: 5 },
+  subtitle: { fontSize: 14, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 20 },
+  totalsSection: { backgroundColor: COLORS.background, borderRadius: 12, padding: 15, marginBottom: 20 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8, borderBottomColor: COLORS.border, borderBottomWidth: 0.5 },
+  totalRowBold: { borderBottomWidth: 0, borderTopColor: COLORS.border, borderTopWidth: 1, marginTop: 5, paddingTop: 12 },
+  totalLabel: { fontSize: 14, color: COLORS.textSecondary },
+  totalLabelBold: { fontSize: 16, fontWeight: 'bold', color: COLORS.textPrimary },
+  totalValue: { fontSize: 14, color: COLORS.textPrimary, fontWeight: '600' },
+  totalValueBold: { fontSize: 20, fontWeight: 'bold', color: COLORS.buttonGreen },
+  paymentSection: { marginBottom: 20 },
+  sectionTitle: { fontSize: 14, fontWeight: '600', color: COLORS.textPrimary, marginBottom: 12 },
+  paymentGrid: { flexDirection: 'row', gap: 12 },
+  paymentBtn: { flex: 1, paddingVertical: 15, borderRadius: 10, backgroundColor: COLORS.background, borderColor: COLORS.border, borderWidth: 2, alignItems: 'center' },
+  paymentBtnSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  paymentIcon: { fontSize: 28, marginBottom: 6 },
+  paymentLabel: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  paymentLabelSelected: { color: COLORS.textPrimary, fontWeight: 'bold' },
+  buttonsContainer: { flexDirection: 'row', gap: 10 },
+  button: { flex: 1, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  cancelBtn: { backgroundColor: COLORS.buttonRed },
+  cancelBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  confirmBtn: { backgroundColor: COLORS.buttonGreen },
+  confirmBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
 });

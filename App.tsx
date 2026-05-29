@@ -1,254 +1,399 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Text, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-
-// Componentes de Pantallas
-import MenuScreen from './screens/MenuScreen';
-import TablesScreen from './screens/TablesScreen';
+import { COLORS } from './constants/colors';
+import LoginScreen from './screens/LoginScreen';
+import AdminPanel from './screens/AdminPanel';
+import WaiterScreen from './screens/WaiterScreen';
+import WaiterDashboard from './screens/WaiterDashboard';
 import KitchenScreen from './screens/KitchenScreen';
-import DashboardScreen from './screens/DashboardScreen';
 import ProductModal from './modals/ProductModal';
-import CheckoutModal from './modals/CheckoutModal';
 import OrderDetailModal from './modals/OrderDetailModal';
+import { getProductOptions } from './services/productService';
+import { supabase } from './services/supabaseClient';
+import { getOrdersByTable, completeOrder } from './services/orderService';
+
+interface User {
+  id: string;
+  username: string;
+  role: 'admin' | 'waiter' | 'kitchen';
+  restaurant_id: string;
+}
+
+type CartItem = {
+  id: string;
+  name: string;
+  qty: number;
+  price: number;
+  customizationText?: string;
+  selectedOptionIds?: string[];
+  optionAdjustments?: { option_id: string; price_adjustment: number }[];
+};
+
+// eslint-disable-next-line sonarjs/cognitive-complexity
+async function persistOrderForTable(
+  tableId: string,
+  restaurantId: string,
+  items: CartItem[],
+  userId: string
+) {
+  const itemsToSave = items.map(item => ({
+    localId: item.id,
+    name: item.name,
+    qty: item.qty,
+    price: item.price,
+    customizationText: item.customizationText || '',
+    selectedOptionIds: item.selectedOptionIds || [],
+    optionAdjustments: item.optionAdjustments || [],
+  }));
+
+  const totalAmount = itemsToSave.reduce((sum, it) => {
+    const adjSum = (it.optionAdjustments || []).reduce((a: number, adj: any) => a + Number(adj.price_adjustment || 0), 0);
+    return sum + ((it.price + adjSum) * it.qty);
+  }, 0);
+
+  const { data: lastOrder, error: lastOrderErr } = await supabase
+    .from('orders')
+    .select('order_number')
+    .eq('restaurant_id', restaurantId)
+    .order('order_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastOrderErr) throw lastOrderErr;
+  const nextOrderNumber = lastOrder && (lastOrder as any).order_number ? (lastOrder as any).order_number + 1 : 1;
+
+  const { data: orderData, error: orderInsertErr } = await supabase
+    .from('orders')
+    .insert([{
+      restaurant_id: restaurantId,
+      table_id: tableId,
+      waiter_id: userId,
+      order_number: nextOrderNumber,
+      status: 'pending',
+      total_amount: totalAmount,
+    }])
+    .select('id')
+    .maybeSingle();
+
+  if (orderInsertErr) throw orderInsertErr;
+  const orderId = (orderData as any).id;
+
+  for (const it of itemsToSave) {
+    const { data: prod, error: prodErr } = await supabase
+      .from('products')
+      .select('id')
+      .eq('restaurant_id', restaurantId)
+      .eq('name', it.name)
+      .maybeSingle();
+
+    if (prodErr || !prod) {
+      throw new Error(`Producto no encontrado en la base de datos: ${it.name}`);
+    }
+
+    const itemAdjSum = (it.optionAdjustments || []).reduce((a: number, adj: any) => a + Number(adj.price_adjustment || 0), 0);
+    const unitPriceWithAdj = Number((it.price + itemAdjSum).toFixed(2));
+    const subtotalWithAdj = Number((unitPriceWithAdj * it.qty).toFixed(2));
+
+    const { data: insertedItem, error: insertItemErr } = await supabase
+      .from('order_items')
+      .insert([{
+        order_id: orderId,
+        product_id: (prod as any).id,
+        quantity: it.qty,
+        unit_price: unitPriceWithAdj,
+        subtotal: subtotalWithAdj,
+      }])
+      .select('id')
+      .maybeSingle();
+
+    if (insertItemErr || !insertedItem) {
+      throw insertItemErr || new Error('No se pudo insertar order_item');
+    }
+
+    const orderItemId = (insertedItem as any).id;
+
+    if (it.optionAdjustments && it.optionAdjustments.length > 0) {
+      const customRows: any[] = [];
+      for (const adj of it.optionAdjustments) {
+        const { data: optRow } = await supabase
+          .from('product_options')
+          .select('name')
+          .eq('id', adj.option_id)
+          .maybeSingle();
+
+        customRows.push({
+          order_item_id: orderItemId,
+          option_id: adj.option_id,
+          selected_value: optRow?.name || null,
+          price_adjustment: Number(adj.price_adjustment || 0),
+        });
+      }
+
+      const { error: customErr } = await supabase
+        .from('order_item_customizations')
+        .insert(customRows);
+
+      if (customErr) throw customErr;
+    }
+  }
+
+  const itemNotes = itemsToSave
+    .map(it => it.customizationText?.trim())
+    .filter((text): text is string => Boolean(text))
+    .join(' | ');
+
+  if (itemNotes) {
+    const { error: notesErr } = await supabase
+      .from('orders')
+      .update({ notes: itemNotes })
+      .eq('id', orderId);
+
+    if (notesErr && String(notesErr.code) !== '42703') {
+      console.warn('No se pudo guardar notes en order:', notesErr);
+    }
+  }
+
+  return { orderId, totalAmount };
+}
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('menu');
-  const [tableCartItems, setTableCartItems] = useState<{[key: number]: any[]}>({});
+  const [user, setUser] = useState<User | null>(null);
+  const [selectedTable, setSelectedTable] = useState<any>(null);
+  const [tablesRefreshKey, setTablesRefreshKey] = useState(0);
+  const [tableCartItems, setTableCartItems] = useState<{ [key: number]: any[] }>({});
+  const [tableOrders, setTableOrders] = useState<{ [key: number]: { items: any[], history: any[] } }>({});
+  const [tableServerTotals, setTableServerTotals] = useState<{ [key: number]: number }>({});
   const [showProductModal, setShowProductModal] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [selectedTable, setSelectedTable] = useState(3);
-  const [tableOrders, setTableOrders] = useState<{[key: number]: { items: any[], history: any[] }}>({
-    3: { items: [], history: [] }
-  });
-  const [lastOrderData, setLastOrderData] = useState<any>(null);
+  const [selectedProductOptions, setSelectedProductOptions] = useState<any[]>([]);
 
-  const cartItems = tableCartItems[selectedTable] || [];
+  const handleSelectProduct = async (product: any) => {
+    setSelectedProduct(product);
+    const options = await getProductOptions(product.id);
+    setSelectedProductOptions(options);
+  };
+
+  const initializeTable = (tableId: string, tableNumber: number) => {
+    // Reset cart and orders for the table every time a table is initialized
+    setTableCartItems(prev => ({ ...prev, [tableNumber]: [] }));
+    setTableOrders(prev => ({ ...prev, [tableNumber]: { items: [], history: [] } }));
+    setSelectedTable({ id: tableId, table_number: tableNumber });
+  };
+
+  const cartItems = selectedTable ? (tableCartItems[selectedTable.table_number] || []) : [];
   const cartCount = cartItems.length;
   const cartTotal = cartItems.reduce((sum, item) => sum + (item.price * item.qty), 0);
-  
-  // Calculate checkout total: cart items + orders in kitchen
-  const currentTableOrders = tableOrders[selectedTable] || { items: [], history: [] };
-  const kitchenTotal = currentTableOrders.items.reduce((sum: number, order: any) => {
-    return sum + order.items.reduce((itemSum: number, item: any) => {
-      return itemSum + (item.price * item.qty);
-    }, 0);
-  }, 0);
-  
-  // Checkout should show total of both cart and kitchen orders
-  const checkoutTotal = cartTotal + kitchenTotal;
 
-  const handleAddToCart = (qty: number, price: number, productName: string = '', customizationText: string = '') => {
+  const handleAddToCart = (
+    qty: number,
+    price: number,
+    productName: string = '',
+    customizationText: string = '',
+    selectedOptionIds: string[] = [],
+    optionAdjustments: { option_id: string; price_adjustment: number }[] = []
+  ) => {
+    if (!selectedTable) return;
     const itemId = `${productName}-${Date.now()}`;
     const newItem = {
       id: itemId,
       name: productName,
-      qty: qty,
-      price: price,
-      customizationText: customizationText // e.g., "Cheddar, Sin cebolla"
+      qty,
+      price,
+      customizationText,
+      selectedOptionIds,
+      optionAdjustments,
     };
-    
-    const updatedCartItems = [...(tableCartItems[selectedTable] || []), newItem];
-    setTableCartItems({
-      ...tableCartItems,
-      [selectedTable]: updatedCartItems
-    });
-    
-    // Store order data for repeat functionality
-    if (productName) {
-      setLastOrderData({ qty, price, productName, customizationText });
-    }
+    const tableNum = selectedTable.table_number;
+    const updatedCartItems = [...(tableCartItems[tableNum] || []), newItem];
+    setTableCartItems({ ...tableCartItems, [tableNum]: updatedCartItems });
   };
 
   const handleRemoveFromCart = (itemId: string) => {
+    if (!selectedTable) return;
+    const tableNum = selectedTable.table_number;
     const updatedCartItems = cartItems.filter(item => item.id !== itemId);
-    setTableCartItems({
-      ...tableCartItems,
-      [selectedTable]: updatedCartItems
-    });
+    setTableCartItems({ ...tableCartItems, [tableNum]: updatedCartItems });
   };
 
-  const handleSendOrder = () => {
-    if (cartItems.length === 0) return;
-    
-    // Add items to table orders with status
-    const currentTable = tableOrders[selectedTable] || { items: [], history: [] };
-    
-    // Create kitchen order with status
-    const kitchenOrder = {
-      id: `order-${selectedTable}-${Date.now()}`,
-      table: selectedTable,
-      items: cartItems.map(item => ({
-        ...item,
-        status: 'pending' // 'pending' | 'prep' | 'ready' | 'delivered'
-      })),
-      timestamp: Date.now(),
-      status: 'pending'
-    };
-    
-    const updatedItems = [...(currentTable.items || []), kitchenOrder];
-    
-    setTableOrders({
-      ...tableOrders,
-      [selectedTable]: {
-        items: updatedItems,
-        history: currentTable.history || []
+  const handleSendOrder = async () => {
+    if (cartItems.length === 0 || !selectedTable || !user) return;
+
+    try {
+      await persistOrderForTable(
+        selectedTable.id,
+        user.restaurant_id,
+        cartItems,
+        user.id
+      );
+
+
+      // Limpiar carrito local
+      setTableCartItems({ ...tableCartItems, [selectedTable.table_number]: [] });
+      setShowOrderDetailModal(false);
+
+      // Update server total cache for this table so totals appear immediately
+      try {
+        const refreshed = await handleRefreshCheckout();
+        setTableServerTotals(prev => ({ ...prev, [selectedTable.table_number]: refreshed }));
+      } catch (err) {
+        console.log('Error updating server total cache after sendOrder:', err);
       }
-    });
-    
-    // Clear cart for this table
-    setTableCartItems({
-      ...tableCartItems,
-      [selectedTable]: []
-    });
-    setShowOrderDetailModal(false);
-    
-    // Show confirmation
-    alert(`Orden enviada a cocina · Mesa ${selectedTable}`);
+
+      Alert.alert('Éxito', `Orden enviada a cocina · Mesa ${selectedTable.table_number}`);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'No se pudo enviar la orden');
+      console.log('Error sending order:', err);
+    }
   };
 
-  const handleCheckout = () => {
-    setShowCheckoutModal(true);
-  };
-
-  const handleConfirmPay = () => {
-    // Get current table data
-    const currentTable = tableOrders[selectedTable] || { items: [], history: [] };
-    const newHistory = [...(currentTable.history || [])];
-    
-    // Calculate total from kitchen orders
-    const totalFromOrders = currentTable.items.reduce((sum: number, order: any) => {
-      return sum + order.items.reduce((itemSum: number, item: any) => {
-        return itemSum + (item.price * item.qty);
+  const handleRefreshCheckout = async (): Promise<number> => {
+    if (!selectedTable) return 0;
+    try {
+      const orders = await getOrdersByTable(selectedTable.id);
+      const aggregatedTotal = (orders || []).reduce((s: number, ord: any) => {
+        const ordTotal = ord.total_amount ?? (ord.items?.reduce((ss: number, it: any) => ss + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0);
+        return s + Number(ordTotal || 0);
       }, 0);
-    }, 0);
-    
-    // Total to save: cart items + kitchen items
-    const totalToSave = cartTotal + totalFromOrders;
-    
-    // Items to save should include both cart items and kitchen orders
-    const itemsToSave = [
-      ...cartItems,
-      ...currentTable.items
-    ];
-    
-    newHistory.push({
-      id: `history-${selectedTable}-${Date.now()}`,
-      timestamp: Date.now(),
-      items: itemsToSave,
-      total: totalToSave,
-      paymentMethod: 'efectivo'
-    });
-    
-    setTableOrders({
-      ...tableOrders,
-      [selectedTable]: {
-        items: [],
-        history: newHistory
+      return aggregatedTotal;
+    } catch (err) {
+      console.log('Error refreshing checkout totals:', err);
+      return 0;
+    }
+  };
+
+  const handleConfirmPay = async () => {
+    if (!selectedTable || !user) return;
+    const tableNum = selectedTable.table_number;
+    try {
+      // Compute aggregated total from all orders (including active and completed)
+      const allOrders = await getOrdersByTable(selectedTable.id, true);
+      const aggregatedTotal = (allOrders || []).reduce((s: number, ord: any) => {
+        const ordTotal = ord.total_amount ?? (ord.items?.reduce((ss: number, it: any) => ss + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0);
+        return s + Number(ordTotal || 0);
+      }, 0);
+
+      // Complete any active orders (so history is recorded)
+      const activeOrders = await getOrdersByTable(selectedTable.id);
+      for (const ord of activeOrders) {
+        if (ord.status !== 'completed') {
+          const total = ord.total_amount || ord.items?.reduce((s: number, it: any) => s + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0;
+          await completeOrder(ord.id, user.restaurant_id, selectedTable.id, total, 'cash');
+        }
       }
-    });
-    
-    setTableCartItems({
-      ...tableCartItems,
-      [selectedTable]: []
-    });
-    setShowCheckoutModal(false);
-    alert(`Cuenta cerrada · Mesa ${selectedTable}`);
-  };
 
-  const handleCancelLastOrder = () => {
-    if (cartItems.length > 0) {
-      setTableCartItems({
-        ...tableCartItems,
-        [selectedTable]: []
-      });
+      const itemsCount = (allOrders || []).reduce((sum: number, ord: any) => sum + ((ord.items || []).length || 0), 0);
+
+      // Insert one history row for the closed account session
+      try {
+        await supabase.from('order_history').insert([
+          {
+            restaurant_id: user.restaurant_id,
+            table_id: selectedTable.id,
+            order_id: null,
+            total_amount: aggregatedTotal,
+            payment_method: 'cash',
+            items_count: itemsCount,
+          },
+        ]);
+      } catch (historyErr) {
+        console.log('Error inserting account history:', historyErr);
+      }
+
+      // Try to mark table as free in DB
+      try {
+        const { error: tableErr } = await supabase
+          .from('tables')
+          .update({ status: 'free' })
+          .eq('id', selectedTable.id);
+        if (tableErr) console.warn('No se pudo liberar mesa en BD:', tableErr);
+      } catch (err) {
+        console.log('Error liberando mesa:', err);
+      }
+
+      // Clear local state
+      setTableOrders({ ...tableOrders, [tableNum]: { items: [], history: [] } });
+      setTableCartItems({ ...tableCartItems, [tableNum]: [] });
+
+      // Clear cached server total for the table
+      setTableServerTotals(prev => ({ ...prev, [tableNum]: 0 }));
+
+      // Force reload tables
+      setTablesRefreshKey(k => k + 1);
+      setShowCheckoutModal(false);
+      setSelectedTable(null);
+      alert(`Cuenta cerrada · Mesa ${tableNum} · Total: $${aggregatedTotal.toFixed(2)}`);
+    } catch (err: any) {
+      console.log('Error during payment:', err);
+      Alert.alert('Error', 'No se pudo completar el pago');
     }
   };
 
-  const handleRepeatOrder = () => {
-    if (!lastOrderData) {
-      alert('No hay orden anterior');
-      return;
-    }
-    
-    // Add the last order data to cart
-    handleAddToCart(
-      lastOrderData.qty,
-      lastOrderData.price,
-      lastOrderData.productName,
-      lastOrderData.customizationText
+  if (!user) {
+    return <LoginScreen onLoginSuccess={setUser} />;
+  }
+
+  if (user.role === 'admin') {
+    return <AdminPanel restaurantId={user.restaurant_id} onLogout={() => setUser(null)} />;
+  }
+
+  if (user.role === 'kitchen') {
+    return <KitchenScreen restaurantId={user.restaurant_id} onLogout={() => setUser(null)} />;
+  }
+
+  if (!selectedTable) {
+    return (
+      <WaiterScreen
+        restaurantId={user.restaurant_id}
+        waiterId={user.id}
+        onLogout={() => setUser(null)}
+        onSelectTable={(table) => initializeTable(table.id, table.table_number)}
+        refreshKey={tablesRefreshKey}
+      />
     );
-    alert(`Orden de ${lastOrderData.productName} agregada`);
-  };
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar hidden={false} />
-      
-      {/* Pantalla actual */}
-      {currentScreen === 'menu' && <MenuScreen 
-        onSelectProduct={setSelectedProduct} 
-        onOpenProductModal={setShowProductModal} 
-        onChangeScreen={setCurrentScreen}
+      <WaiterDashboard
+        restaurantId={user.restaurant_id}
+        userId={user.id}
         selectedTable={selectedTable}
-        onSetTable={setSelectedTable}
-        tableOrders={tableOrders}
-        lastOrderData={lastOrderData}
-        onCancelOrder={handleCancelLastOrder}
-        onCheckout={handleCheckout}
-        onRepeatOrder={handleRepeatOrder}
-      />}
-      {currentScreen === 'tables' && <TablesScreen 
-        onChangeScreen={setCurrentScreen}
-        selectedTable={selectedTable}
-        onSelectTable={setSelectedTable}
-      />}
-      {currentScreen === 'kitchen' && <KitchenScreen 
-        onChangeScreen={setCurrentScreen}
-        tableOrders={tableOrders}
-        onUpdateOrderStatus={(mesa, orderId, newStatus) => {
-          const currentTable = tableOrders[mesa] || { items: [], history: [] };
-          const updatedItems = currentTable.items.map((order: any) => 
-            order.id === orderId ? { ...order, status: newStatus } : order
-          );
-          setTableOrders({
-            ...tableOrders,
-            [mesa]: {
-              ...currentTable,
-              items: updatedItems
-            }
-          });
-        }}
-      />}
-      {currentScreen === 'dashboard' && <DashboardScreen onChangeScreen={setCurrentScreen} />}
-
-      {/* Modales */}
-      <ProductModal 
-        visible={showProductModal} 
-        product={selectedProduct} 
-        onClose={() => setShowProductModal(false)}
+        cartItems={cartItems}
+        cartTotal={cartTotal}
+        onSelectProduct={handleSelectProduct}
+        onOpenProductModal={setShowProductModal}
         onAddToCart={handleAddToCart}
+        onRemoveFromCart={handleRemoveFromCart}
+        onSendOrder={handleSendOrder}
+        onShowCheckout={setShowCheckoutModal}
+        showCheckoutModal={showCheckoutModal}
+        onConfirmPay={handleConfirmPay}
+        onRefreshCheckout={handleRefreshCheckout}
+        serverTotalOverride={tableServerTotals[selectedTable.table_number] || 0}
+        onBackToTables={() => setSelectedTable(null)}
       />
 
-      <CheckoutModal
-        visible={showCheckoutModal}
-        cartTotal={checkoutTotal}
-        selectedTable={selectedTable}
-        onClose={() => setShowCheckoutModal(false)}
-        onConfirm={handleConfirmPay}
+      <ProductModal 
+        visible={showProductModal}
+        product={selectedProduct}
+        options={selectedProductOptions}
+        onClose={() => setShowProductModal(false)}
+        onAddToCart={handleAddToCart}
       />
 
       <OrderDetailModal
         visible={showOrderDetailModal}
         items={cartItems}
-        selectedTable={selectedTable}
+        selectedTable={selectedTable?.table_number || 0}
         onClose={() => setShowOrderDetailModal(false)}
         onRemoveItem={handleRemoveFromCart}
         onSendOrder={handleSendOrder}
       />
 
-      {/* Order Bar - Vista previa del carrito */}
       {cartCount > 0 && (
         <TouchableOpacity 
           style={styles.orderBar}
@@ -257,113 +402,19 @@ export default function App() {
           <View style={styles.orderBarBadge}>
             <Text style={styles.orderBarBadgeText}>{cartCount}</Text>
           </View>
-          <Text style={styles.orderBarLabel}>Orden · Mesa {selectedTable}</Text>
+          <Text style={styles.orderBarLabel}>Orden · Mesa {selectedTable.table_number}</Text>
           <Text style={styles.orderBarTotal}>${cartTotal}</Text>
         </TouchableOpacity>
       )}
-
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity 
-          style={[styles.navItem, currentScreen === 'menu' && styles.navItemActive]}
-          onPress={() => setCurrentScreen('menu')}
-        >
-          <Text style={styles.navItemIcon}>🍽</Text>
-          <Text style={[styles.navItemText, currentScreen === 'menu' && styles.navItemTextActive]}>Menú</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navItem, currentScreen === 'tables' && styles.navItemActive]}
-          onPress={() => setCurrentScreen('tables')}
-        >
-          <Text style={styles.navItemIcon}>📋</Text>
-          <Text style={[styles.navItemText, currentScreen === 'tables' && styles.navItemTextActive]}>Mesas</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navItem, currentScreen === 'kitchen' && styles.navItemActive]}
-          onPress={() => setCurrentScreen('kitchen')}
-        >
-          <Text style={styles.navItemIcon}>🔥</Text>
-          <Text style={[styles.navItemText, currentScreen === 'kitchen' && styles.navItemTextActive]}>Cocina</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navItem, currentScreen === 'dashboard' && styles.navItemActive]}
-          onPress={() => setCurrentScreen('dashboard')}
-        >
-          <Text style={styles.navItemIcon}>📊</Text>
-          <Text style={[styles.navItemText, currentScreen === 'dashboard' && styles.navItemTextActive]}>Dashboard</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#111',
-  },
-  orderBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ff6b2c',
-    marginHorizontal: 14,
-    marginBottom: 70,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    gap: 10,
-  },
-  orderBarBadge: {
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    borderRadius: 10,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  orderBarBadgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  orderBarLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    flex: 1,
-  },
-  orderBarTotal: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderTopColor: '#2a2a2a',
-    borderTopWidth: 0.5,
-  },
-  navItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    gap: 3,
-  },
-  navItemActive: {},
-  navItemIcon: {
-    fontSize: 20,
-  },
-  navItemText: {
-    color: '#555',
-    fontSize: 9,
-  },
-  navItemTextActive: {
-    color: '#ff6b2c',
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  orderBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primary, marginHorizontal: 14, marginBottom: 14, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, gap: 10 },
+  orderBarBadge: { backgroundColor: 'rgba(0, 0, 0, 0.15)', borderRadius: 10, paddingVertical: 2, paddingHorizontal: 8 },
+  orderBarBadgeText: { color: COLORS.textPrimary, fontSize: 12, fontWeight: 'bold' },
+  orderBarLabel: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '600', flex: 1 },
+  orderBarTotal: { color: COLORS.textPrimary, fontSize: 16, fontWeight: 'bold' },
 });

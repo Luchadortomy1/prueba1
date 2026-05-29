@@ -8,7 +8,8 @@ interface HistoryDetailModalProps {
   onClose: () => void;
 }
 
-export default function HistoryDetailModal({ visible, historyEntry, onClose }: HistoryDetailModalProps) {
+export default function HistoryDetailModal(props: Readonly<HistoryDetailModalProps>) {
+  const { visible, historyEntry, onClose } = props;
   if (!historyEntry) return null;
 
   const timestamp = new Date(historyEntry.timestamp);
@@ -22,8 +23,7 @@ export default function HistoryDetailModal({ visible, historyEntry, onClose }: H
 
   // Calculate totals
   const subtotal = allItems.reduce((sum: number, item: any) => sum + (item.price * item.qty), 0);
-  const tax = Math.round(subtotal * 0.16);
-  const total = subtotal + tax;
+  const total = subtotal;
 
   // Get payment method label
   const paymentLabel = historyEntry.paymentMethod === 'cash' ? '💵 Efectivo' : '💳 Tarjeta';
@@ -65,8 +65,8 @@ export default function HistoryDetailModal({ visible, historyEntry, onClose }: H
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Productos ({allItems.length})</Text>
               {allItems.length > 0 ? (
-                allItems.map((item: any, idx: number) => (
-                  <View key={idx} style={styles.itemCard}>
+                allItems.map((item: any) => (
+                  <View key={item.id || `${item.name}-${item.qty}-${item.price}`} style={styles.itemCard}>
                     <View style={styles.itemHeader}>
                       <Text style={styles.itemName}>{item.name}</Text>
                       <Text style={styles.itemPrice}>${(item.price * item.qty).toFixed(0)}</Text>
@@ -99,13 +99,9 @@ export default function HistoryDetailModal({ visible, historyEntry, onClose }: H
                 <Text style={styles.totalLabel}>Subtotal</Text>
                 <Text style={styles.totalValue}>${subtotal}</Text>
               </View>
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>IVA 16%</Text>
-                <Text style={styles.totalValue}>${tax}</Text>
-              </View>
               <View style={[styles.totalRow, styles.totalRowFinal]}>
                 <Text style={styles.totalLabelFinal}>Total</Text>
-                <Text style={styles.totalValueFinal}>${historyEntry.total || total}</Text>
+                <Text style={styles.totalValueFinal}>${historyEntry.total_amount || historyEntry.total || total}</Text>
               </View>
             </View>
           </ScrollView>

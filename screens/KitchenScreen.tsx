@@ -1,335 +1,272 @@
-import React, { useMemo } from 'react';
-import { StyleSheet, View, ScrollView, Text, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, Alert } from 'react-native';
 import { COLORS } from '../constants/colors';
+import { supabase } from '../services/supabaseClient';
+import { updateOrderStatus as svcUpdateOrderStatus } from '../services/orderService';
 
 interface KitchenOrder {
   id: string;
-  table: number;
+  table_number: number;
   items: any[];
-  timestamp: number;
-  status: 'pending' | 'prep' | 'ready' | 'delivered';
+  created_at: string;
+  status: 'pending' | 'started' | 'ready' | 'delivered';
 }
 
 interface KitchenScreenProps {
-  onChangeScreen: (screen: string) => void;
-  tableOrders?: {[key: number]: { items: any[] }};
-  onUpdateOrderStatus?: (mesa: number, orderId: string, newStatus: string) => void;
+  restaurantId: string;
+  onLogout?: () => void;
 }
 
-const getEmoji = (productName: string): string => {
-  const emojiMap: {[key: string]: string} = {
-    'Hamburguesa Smash Doble': '🍔',
-    'Pizza Hawaiiana': '🍍',
-    'Crispy Chicken': '🐔',
-    'Champiñones': '🍄',
-    'Alitas Buffalo': '🍗',
-    'Limonada Rosa': '🍋',
-  };
-  return emojiMap[productName] || '🍽';
-};
+export default function KitchenScreen({ restaurantId, onLogout }: KitchenScreenProps) {
+  const [orders, setOrders] = useState<KitchenOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-export default function KitchenScreen({ onChangeScreen, tableOrders = {}, onUpdateOrderStatus }: KitchenScreenProps) {
-  // Flatten all orders from all tables
-  const allOrders = useMemo(() => {
-    const orders: (KitchenOrder & { tableName: string })[] = [];
-    
-    Object.entries(tableOrders).forEach(([tableNum, tableData]: [string, any]) => {
-      if (tableData?.items && Array.isArray(tableData.items)) {
-        tableData.items.forEach((order: any) => {
-          if (order.id && order.items) {
-            orders.push({
-              ...order,
-              table: parseInt(tableNum),
-              tableName: `Mesa ${String(parseInt(tableNum)).padStart(2, '0')}`
-            });
-          }
-        });
+  useEffect(() => {
+    loadOrders();
+    const interval = setInterval(loadOrders, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const loadOrders = async () => {
+    try {
+      // Intento inicial con notes (si la tabla lo soporta)
+      let query = supabase
+        .from('orders')
+        .select(`
+          id,
+          status,
+          created_at,
+          tables(table_number),
+          order_items (
+            id,
+            quantity,
+            unit_price,
+            subtotal,
+            status,
+            products (name),
+            order_item_customizations (selected_value, price_adjustment, product_options(name))
+          )
+        `)
+        .eq('restaurant_id', restaurantId)
+        .in('status', ['pending', 'in_progress', 'ready'])
+        .order('created_at', { ascending: true });
+
+      let res = await query;
+
+      if (res.error && /notes/.test(String(res.error.message))) {
+        console.debug('notes column missing in orders, retrying without notes');
+        res = await supabase
+          .from('orders')
+          .select(`
+            id,
+            status,
+            created_at,
+            tables(table_number),
+            order_items (
+              id,
+              quantity,
+              unit_price,
+              subtotal,
+              status,
+              products (name),
+              order_item_customizations (selected_value, price_adjustment, product_options(name))
+            )
+          `)
+          .eq('restaurant_id', restaurantId)
+          .in('status', ['pending', 'in_progress', 'ready'])
+          .order('created_at', { ascending: true });
       }
-    });
-    
-    return orders.sort((a, b) => b.timestamp - a.timestamp);
-  }, [tableOrders]);
 
-  const getElapsedTime = (timestamp: number): string => {
-    const elapsed = Math.floor((Date.now() - timestamp) / 1000);
-    if (elapsed < 60) return `${elapsed}s`;
-    return `${Math.floor(elapsed / 60)}m`;
+      const { data, error } = res;
+
+      if (error) throw error;
+
+      const ordersData = (data || []).map((order: any) => ({
+        id: order.id,
+        status: order.status,
+        items: (order.order_items || []).map((it: any) => ({
+          id: it.id,
+          qty: it.quantity,
+          name: it.products?.name || 'Desconocido',
+          price: it.unit_price,
+          item_status: it.status,
+          customizations: it.order_item_customizations || [],
+          customizationText: it.customization_text || null,
+        })),
+        created_at: order.created_at,
+        table_number: order.tables?.table_number || 0,
+      }));
+
+      setOrders(ordersData);
+    } catch (err) {
+      console.log('Error loading kitchen orders:', err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
-  const renderOrderCard = (order: KitchenOrder & { tableName: string }) => {
-    const statusConfig = {
-      pending: { color: '#f59e0b', label: 'Pendiente', bgColor: '#78350f' },
-      prep: { color: '#f59e0b', label: 'Preparando', bgColor: '#78350f' },
-      ready: { color: '#10b981', label: 'Listo', bgColor: '#064e3b' },
-      delivered: { color: '#6b7280', label: 'Entregado', bgColor: '#1f2937' },
-    };
-    const config = statusConfig[order.status || 'pending'];
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadOrders();
+  };
 
-    return (
-      <View key={order.id} style={[styles.orderCard]}>
-        <View style={styles.orderHeader}>
-          <View style={[styles.statusBar, { backgroundColor: config.color }]} />
-          <Text style={styles.tableName}>{order.tableName}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: config.bgColor }]}>
-            <Text style={[styles.statusBadgeText, { color: config.color }]}>
-              {config.label}
-            </Text>
-          </View>
-          <Text style={[styles.orderTime, { color: config.color }]}>
-            {getElapsedTime(order.timestamp)}
-          </Text>
-        </View>
+  const updateOrderStatus = async (orderId: string, nextDbStatus: string) => {
+    try {
+      const ok = await svcUpdateOrderStatus(orderId, nextDbStatus as any);
+      if (!ok) throw new Error('update failed');
+      loadOrders();
+    } catch (err) {
+      Alert.alert('Error', 'No se pudo actualizar la orden');
+    }
+  };
 
-        <View style={styles.orderItems}>
-          {order.items?.map((item, idx) => (
-            <View key={idx} style={styles.orderItem}>
-              <Text style={styles.itemEmoji}>{getEmoji(item.name)}</Text>
-              <View style={styles.itemDetails}>
-                <Text style={styles.itemQty}>{item.qty}x</Text>
-                <Text style={styles.itemName}>{item.name}</Text>
-                {item.customizationText && (
-                  <Text style={styles.itemCustom}>{item.customizationText}</Text>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
+  const getStatusColor = (status: string) => {
+    // Map DB statuses to UI colors
+    switch (status) {
+      case 'pending':
+        return COLORS.buttonRed;
+      case 'in_progress':
+        return '#FF9800';
+      case 'ready':
+        return COLORS.primary;
+      case 'completed':
+        return COLORS.buttonGreen;
+      default:
+        return COLORS.textSecondary;
+    }
+  };
 
-        <View style={styles.orderActions}>
-          {order.status === 'pending' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.startBtn]}
-              onPress={() => onUpdateOrderStatus?.(order.table, order.id, 'prep')}
-            >
-              <Text style={styles.actionBtnText}>Iniciar preparación</Text>
-            </TouchableOpacity>
-          )}
-          {order.status === 'prep' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.readyBtn]}
-              onPress={() => onUpdateOrderStatus?.(order.table, order.id, 'ready')}
-            >
-              <Text style={styles.actionBtnText}>Marcar listo</Text>
-            </TouchableOpacity>
-          )}
-          {order.status === 'ready' && (
-            <TouchableOpacity
-              style={[styles.actionBtn, styles.deliveredBtn]}
-              onPress={() => onUpdateOrderStatus?.(order.table, order.id, 'delivered')}
-            >
-              <Text style={styles.actionBtnText}>Entregar</Text>
-            </TouchableOpacity>
-          )}
-          {order.status === 'delivered' && (
-            <View style={[styles.actionBtn, styles.completedBtn]}>
-              <Text style={styles.completedBtnText}>✓ Entregado</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    );
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'Pendiente';
+      case 'in_progress':
+        return 'Empezado';
+      case 'ready':
+        return 'Listo';
+      case 'completed':
+        return 'Entregado';
+      default:
+        return status;
+    }
+  };
+
+  const getNextStatus = (currentDbStatus: string): string | null => {
+    switch (currentDbStatus) {
+      case 'pending':
+        return 'in_progress';
+      case 'in_progress':
+        return 'ready';
+      case 'ready':
+        return 'completed';
+      default:
+        return null;
+    }
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.topbar}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => onChangeScreen('menu')}>
-          <Text style={styles.iconBtnText}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.topbarTitle}>🔥 Cocina</Text>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{allOrders.length} órdenes</Text>
+      <View style={styles.headerRow}>
+        <View>
+          <Text style={styles.title}>Cocina</Text>
+          <Text style={styles.subtitle}>{orders.length} orden(es) pendiente(s)</Text>
         </View>
+        {onLogout ? (
+          <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
+            <Text style={styles.logoutText}>Salir</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {allOrders.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Sin órdenes pendientes</Text>
-            <Text style={styles.emptySubtext}>Las órdenes aparecerán aquí cuando se envíen desde el menú</Text>
-          </View>
-        ) : (
-          allOrders.map(renderOrderCard)
-        )}
-      </ScrollView>
+      {orders.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No hay órdenes pendientes</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => item.id}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          renderItem={({ item }) => (
+            <View style={styles.orderCard}>
+              <View style={styles.orderHeader}>
+                <View>
+                  <Text style={styles.tableLabel}>Mesa {item.table_number}</Text>
+                  <Text style={styles.orderTime}>
+                    {new Date(item.created_at).toLocaleTimeString()}
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+                  <Text style={styles.statusText}>{getStatusLabel(item.status)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.itemsList}>
+                {item.items.map((orderItem: any, idx: number) => (
+                  <View key={idx} style={styles.itemRow}>
+                    <Text style={styles.itemQty}>{orderItem.qty}</Text>
+                    <Text style={styles.itemName}>{orderItem.name}</Text>
+                    {orderItem.customizationText && (
+                      <Text style={styles.itemCustom}>{orderItem.customizationText}</Text>
+                    )}
+                    {orderItem.customizations && orderItem.customizations.length > 0 && (
+                      <View style={styles.customizationsContainer}>
+                        {orderItem.customizations.map((c: any, idx: number) => (
+                          <Text key={idx} style={styles.itemCustom}>
+                            - {c.selected_value || c.product_options?.name || 'Extra'} {c.price_adjustment ? `(+${c.price_adjustment})` : ''}
+                          </Text>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.updateBtn, { backgroundColor: getStatusColor(item.status) }]}
+                onPress={() => {
+                  const nextStatus = getNextStatus(item.status);
+                  if (nextStatus) {
+                    updateOrderStatus(item.id, nextStatus);
+                  }
+                }}
+              >
+                <Text style={styles.updateBtnText}>
+                  {getNextStatus(item.status) ? `Marcar como ${getStatusLabel(getNextStatus(item.status)!)}` : 'Completado'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          contentContainerStyle={{ paddingVertical: 10, paddingHorizontal: 15 }}
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingBottom: 70,
-  },
-  topbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    paddingTop: 20,
-    gap: 10,
-    borderBottomColor: COLORS.border,
-    borderBottomWidth: 0.5,
-  },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#252525',
-    borderColor: '#333',
-    borderWidth: 0.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconBtnText: {
-    fontSize: 16,
-    color: '#aaa',
-  },
-  topbarTitle: {
-    color: COLORS.textPrimary,
-    fontSize: 15,
-    fontWeight: '500',
-    flex: 1,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    backgroundColor: '#252525',
-    borderRadius: 10,
-  },
-  badgeText: {
-    color: '#aaa',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  content: {
-    padding: 14,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyText: {
-    color: COLORS.textPrimary,
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    color: '#666',
-    fontSize: 13,
-    textAlign: 'center',
-  },
-  orderCard: {
-    backgroundColor: COLORS.surface,
-    borderColor: COLORS.border,
-    borderWidth: 0.5,
-    borderRadius: 14,
-    marginBottom: 10,
-    overflow: 'hidden',
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomColor: COLORS.border,
-    borderBottomWidth: 0.5,
-    gap: 8,
-  },
-  statusBar: {
-    width: 4,
-    height: 36,
-    borderRadius: 2,
-  },
-  tableName: {
-    color: COLORS.textPrimary,
-    fontSize: 18,
-    fontWeight: '500',
-  },
-  statusBadge: {
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    marginLeft: 'auto',
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  orderTime: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  orderItems: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    gap: 10,
-  },
-  orderItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  itemEmoji: {
-    fontSize: 24,
-  },
-  itemDetails: {
-    flex: 1,
-  },
-  itemQty: {
-    color: COLORS.primary,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  itemName: {
-    color: '#ccc',
-    fontSize: 13,
-    marginTop: 2,
-  },
-  itemCustom: {
-    color: '#666',
-    fontSize: 11,
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
-  orderActions: {
-    paddingHorizontal: 12,
-    paddingBottom: 10,
-    paddingTop: 10,
-    borderTopColor: COLORS.border,
-    borderTopWidth: 0.5,
-    gap: 8,
-  },
-  actionBtn: {
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  actionBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-  },
-  startBtn: {
-    backgroundColor: '#78350f',
-  },
-  readyBtn: {
-    backgroundColor: '#78350f',
-  },
-  deliveredBtn: {
-    backgroundColor: '#064e3b',
-  },
-  completedBtn: {
-    backgroundColor: '#1f2937',
-  },
-  completedBtnText: {
-    color: '#4ade80',
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  header: { backgroundColor: COLORS.surface, paddingHorizontal: 15, paddingVertical: 15, borderBottomColor: COLORS.border, borderBottomWidth: 1 },
+  title: { fontSize: 20, fontWeight: 'bold', color: COLORS.textPrimary },
+  subtitle: { fontSize: 12, color: COLORS.textSecondary, marginTop: 4 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  emptyText: { fontSize: 14, color: COLORS.textTertiary },
+  orderCard: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 15, marginBottom: 12, borderWidth: 2, borderColor: COLORS.border },
+  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, paddingBottom: 12, borderBottomColor: COLORS.border, borderBottomWidth: 1 },
+  tableLabel: { fontSize: 14, fontWeight: 'bold', color: COLORS.textPrimary },
+  orderTime: { fontSize: 11, color: COLORS.textSecondary, marginTop: 4 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
+  statusText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  itemsList: { marginBottom: 12, backgroundColor: COLORS.background, borderRadius: 8, padding: 10 },
+  itemRow: { paddingVertical: 8, borderBottomColor: COLORS.border, borderBottomWidth: 1 },
+  itemQty: { fontSize: 14, fontWeight: 'bold', color: COLORS.primary, marginBottom: 2 },
+  itemName: { flex: 1, fontSize: 14, color: COLORS.textPrimary, fontWeight: '500' },
+  itemCustom: { fontSize: 12, color: COLORS.textSecondary, marginTop: 4, fontStyle: 'italic' },
+  updateBtn: { paddingVertical: 12, borderRadius: 10, alignItems: 'center' },
+  updateBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
+  headerRow: { backgroundColor: COLORS.surface, paddingHorizontal: 15, paddingVertical: 15, borderBottomColor: COLORS.border, borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  logoutBtn: { backgroundColor: COLORS.buttonRed, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  logoutText: { color: '#fff', fontWeight: '700' },
 });
