@@ -11,7 +11,7 @@ import ProductModal from './modals/ProductModal';
 import OrderDetailModal from './modals/OrderDetailModal';
 import { getProductOptions } from './services/productService';
 import { supabase } from './services/supabaseClient';
-import { getOrdersByTable, completeOrder } from './services/orderService';
+import { getOrdersByTable } from './services/orderService';
 
 interface User {
   id: string;
@@ -268,34 +268,36 @@ export default function App() {
     if (!selectedTable || !user) return;
     const tableNum = selectedTable.table_number;
     try {
-      // Compute aggregated total from all orders (including active and completed)
-      const allOrders = await getOrdersByTable(selectedTable.id, true);
-      const aggregatedTotal = (allOrders || []).reduce((s: number, ord: any) => {
-        const ordTotal = ord.total_amount ?? (ord.items?.reduce((ss: number, it: any) => ss + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0);
+      // Get active (non-completed) orders for this session
+      const activeOrders = await getOrdersByTable(selectedTable.id);
+      
+      // Block payment if there are active orders (they must be ready/completed first)
+      if ((activeOrders || []).length > 0) {
+        Alert.alert('Atención', 'No se puede cobrar hasta que todos los pedidos estén listos.');
+        return;
+      }
+
+      // Get all orders from current session (completed ones)
+      const sessionOrders = await getOrdersByTable(selectedTable.id, true);
+      const sessionTotal = (sessionOrders || []).reduce((s: number, ord: any) => {
+        const ordTotal = ord.total_amount ?? (ord.order_items?.reduce((ss: number, it: any) => ss + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0);
         return s + Number(ordTotal || 0);
       }, 0);
 
-      // Complete any active orders (so history is recorded)
-      const activeOrders = await getOrdersByTable(selectedTable.id);
-      for (const ord of activeOrders) {
-        if (ord.status !== 'completed') {
-          const total = ord.total_amount || ord.items?.reduce((s: number, it: any) => s + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0;
-          await completeOrder(ord.id, user.restaurant_id, selectedTable.id, total, 'cash');
-        }
-      }
-
-      const itemsCount = (allOrders || []).reduce((sum: number, ord: any) => sum + ((ord.items || []).length || 0), 0);
+      const itemsCount = (sessionOrders || []).reduce((sum: number, ord: any) => sum + ((ord.order_items || []).length || 0), 0);
 
       // Insert one history row for the closed account session
       try {
+        const nowUTC = new Date().toISOString();
         await supabase.from('order_history').insert([
           {
             restaurant_id: user.restaurant_id,
             table_id: selectedTable.id,
             order_id: null,
-            total_amount: aggregatedTotal,
+            total_amount: sessionTotal,
             payment_method: 'cash',
             items_count: itemsCount,
+            completed_at: nowUTC,
           },
         ]);
       } catch (historyErr) {
@@ -324,7 +326,7 @@ export default function App() {
       setTablesRefreshKey(k => k + 1);
       setShowCheckoutModal(false);
       setSelectedTable(null);
-      alert(`Cuenta cerrada · Mesa ${tableNum} · Total: $${aggregatedTotal.toFixed(2)}`);
+      alert(`Cuenta cerrada · Mesa ${tableNum} · Total: $${sessionTotal.toFixed(2)}`);
     } catch (err: any) {
       console.log('Error during payment:', err);
       Alert.alert('Error', 'No se pudo completar el pago');

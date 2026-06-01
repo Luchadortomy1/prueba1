@@ -35,6 +35,7 @@ export default function TableHistoryModal(props: Readonly<TableHistoryModalProps
   const [rows, setRows] = useState<HistoryRow[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<any>(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [tableFilter, setTableFilter] = useState<number>(0); // 0 = all, 1-9 = specific table
 
   const loadHistory = async () => {
     setLoading(true);
@@ -64,48 +65,53 @@ export default function TableHistoryModal(props: Readonly<TableHistoryModalProps
 
   const openDetail = async (row: HistoryRow) => {
     try {
-      const sameTableRows = rows
-        .filter((entry) => entry.table_id === row.table_id)
-        .sort((a, b) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime());
+      // Get items directly from row since it's a single session closure
+      let detailedItems: any[] = [];
+      
+      if (row.items_count && row.items_count > 0) {
+        const sameTableRows = rows
+          .filter((entry) => entry.table_id === row.table_id)
+          .sort((a, b) => new Date(a.completed_at).getTime() - new Date(b.completed_at).getTime());
 
-      const currentIndex = sameTableRows.findIndex((entry) => entry.id === row.id);
-      const previousBoundary = currentIndex > 0 ? sameTableRows[currentIndex - 1].completed_at : null;
+        const currentIndex = sameTableRows.findIndex((entry) => entry.id === row.id);
+        const previousBoundary = currentIndex > 0 ? sameTableRows[currentIndex - 1].completed_at : null;
 
-      let orderQuery = supabase
-        .from('orders')
-        .select(`
-          id,
-          created_at,
-          order_items (
+        let orderQuery = supabase
+          .from('orders')
+          .select(`
             id,
-            quantity,
-            unit_price,
-            subtotal,
-            products (name),
-            order_item_customizations (selected_value, price_adjustment, product_options(name))
-          )
-        `)
-        .eq('table_id', row.table_id)
-        .lte('created_at', row.completed_at)
-        .order('created_at', { ascending: true });
+            created_at,
+            order_items (
+              id,
+              quantity,
+              unit_price,
+              subtotal,
+              products (name),
+              order_item_customizations (selected_value, price_adjustment, product_options(name))
+            )
+          `)
+          .eq('table_id', row.table_id)
+          .lte('created_at', row.completed_at)
+          .order('created_at', { ascending: true });
 
-      if (previousBoundary) {
-        orderQuery = orderQuery.gt('created_at', previousBoundary);
+        if (previousBoundary) {
+          orderQuery = orderQuery.gt('created_at', previousBoundary);
+        }
+
+        const { data: orderData, error } = await orderQuery;
+
+        if (error) throw error;
+
+        detailedItems = (orderData || []).flatMap((order: any) =>
+          (order.order_items || []).map((it: any) => ({
+            id: it.id,
+            name: it.products?.name || 'Desconocido',
+            qty: it.quantity,
+            price: it.unit_price,
+            customizationText: formatCustomizationText(it.order_item_customizations || []),
+          }))
+        );
       }
-
-      const { data: orderData, error } = await orderQuery;
-
-      if (error) throw error;
-
-      const detailedItems = (orderData || []).flatMap((order: any) =>
-        (order.order_items || []).map((it: any) => ({
-          id: it.id,
-          name: it.products?.name || 'Desconocido',
-          qty: it.quantity,
-          price: it.unit_price,
-          customizationText: formatCustomizationText(it.order_item_customizations || []),
-        }))
-      );
 
       setSelectedEntry({
         id: row.id,
@@ -121,6 +127,12 @@ export default function TableHistoryModal(props: Readonly<TableHistoryModalProps
     }
   };
 
+  const filteredRows = tableFilter === 0 
+    ? rows 
+    : rows.filter(row => row.table_number === tableFilter);
+  
+  const totalAmount = filteredRows.reduce((sum, row) => sum + (row.total_amount || 0), 0);
+
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -132,13 +144,39 @@ export default function TableHistoryModal(props: Readonly<TableHistoryModalProps
             </TouchableOpacity>
           </View>
 
+          {/* FILTER SECTION */}
+          <View style={styles.filterSection}>
+            <Text style={styles.filterLabel}>Filtrar por Mesa:</Text>
+            <View style={styles.filterButtons}>
+              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((tableNum) => (
+                <TouchableOpacity
+                  key={tableNum}
+                  style={[styles.filterBtn, tableFilter === tableNum && styles.filterBtnActive]}
+                  onPress={() => setTableFilter(tableNum)}
+                >
+                  <Text style={[styles.filterBtnText, tableFilter === tableNum && styles.filterBtnTextActive]}>
+                    {tableNum === 0 ? 'Todas' : tableNum}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* TOTAL SECTION */}
+          {filteredRows.length > 0 && (
+            <View style={styles.totalSection}>
+              <Text style={styles.totalLabel}>Total de Cuentas Filtradas:</Text>
+              <Text style={styles.totalAmount}>${totalAmount.toFixed(2)}</Text>
+            </View>
+          )}
+
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={COLORS.primary} size="large" />
             </View>
           ) : (
             <FlatList
-              data={rows}
+              data={filteredRows}
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.listContent}
               ListEmptyComponent={(
@@ -181,11 +219,26 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   title: { fontSize: 18, fontWeight: 'bold', color: COLORS.textPrimary },
   closeText: { fontSize: 22, color: COLORS.textSecondary },
+  
+  /* FILTER SECTION */
+  filterSection: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.background },
+  filterLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, marginBottom: 10 },
+  filterButtons: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterBtn: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: COLORS.border, borderWidth: 1, borderColor: COLORS.border },
+  filterBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  filterBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.textSecondary },
+  filterBtnTextActive: { color: COLORS.textPrimary, fontWeight: 'bold' },
+  
+  /* TOTAL SECTION */
+  totalSection: { paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.background, borderBottomWidth: 1, borderBottomColor: COLORS.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  totalLabel: { fontSize: 13, fontWeight: '700', color: COLORS.textSecondary },
+  totalAmount: { fontSize: 18, fontWeight: 'bold', color: COLORS.buttonGreen },
+  
   loadingContainer: { paddingVertical: 40 },
   emptyContainer: { padding: 28, alignItems: 'center' },
   emptyText: { color: COLORS.textSecondary },
   listContent: { padding: 16, gap: 10 },
-  rowCard: { backgroundColor: COLORS.background, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: COLORS.border },
+  rowCard: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: COLORS.border },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary },
   rowAmount: { fontSize: 16, fontWeight: 'bold', color: COLORS.buttonGreen },

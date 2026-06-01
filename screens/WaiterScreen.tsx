@@ -238,6 +238,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+    paddingTop: 5,
   },
   header: {
     backgroundColor: COLORS.surface,
@@ -249,7 +250,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     borderBottomWidth: 1,
   },
-  headerActions: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  headerActions: { flexDirection: 'row', gap: 12, alignItems: 'center' },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -257,28 +258,29 @@ const styles = StyleSheet.create({
   },
   historyButton: {
     backgroundColor: COLORS.primary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
-  historyButtonText: { color: COLORS.textPrimary, fontWeight: '600', fontSize: 12 },
+  historyButtonText: { color: COLORS.textPrimary, fontWeight: '700', fontSize: 12 },
   logoutButton: {
     backgroundColor: COLORS.buttonRed,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   logoutButtonText: {
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 12,
   },
   listContent: {
-    padding: 15,
+    padding: 16,
+    gap: 15,
   },
   tableRow: {
     justifyContent: 'space-between',
-    marginBottom: 15,
+    gap: 14,
   },
   tableCard: {
     width: '32%',

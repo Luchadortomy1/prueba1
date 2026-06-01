@@ -23,7 +23,7 @@ export default function MenuScreen({
   onSelectProduct,
   onOpenProductModal,
   onBackToTables,
-}: MenuScreenProps) {
+}: Readonly<MenuScreenProps>) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -59,7 +59,7 @@ export default function MenuScreen({
   const filteredProducts = selectedCategoryId
     ? products.filter(prod => {
         const todoId = categories.find(c => c.name === 'Todo')?.id;
-        if (selectedCategoryId === todoId) return true; // Show all if "Todo" selected
+        if (selectedCategoryId === todoId) return true; // Show all if "All" category selected
         // Otherwise show only products in selected category
         return productCategoryMap[prod.id]?.includes(selectedCategoryId);
       })
@@ -194,46 +194,51 @@ const styles = StyleSheet.create({
   },
   categoriesScroll: {
     backgroundColor: COLORS.surface,
-    maxHeight: 64,
+    maxHeight: 75,
+    borderBottomColor: COLORS.border,
+    borderBottomWidth: 1,
+    paddingVertical: 4,
   },
   categoriesContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
+    paddingHorizontal: 14,
+    gap: 12,
     alignItems: 'center',
   },
-  categoriesScrollContent: { alignItems: 'center', paddingHorizontal: 6 },
+  categoriesScrollContent: { alignItems: 'center', paddingVertical: 8 },
   categoryTag: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 22,
     backgroundColor: COLORS.border,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     alignSelf: 'center',
-    marginRight: 8,
+    minHeight: 40,
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   categoryTagActive: {
     backgroundColor: COLORS.primary,
     borderColor: COLORS.primary,
   },
   categoryTagText: {
-    fontSize: 12,
+    fontSize: 13,
     color: COLORS.textSecondary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   categoryTagTextActive: {
     color: COLORS.textPrimary,
     fontWeight: 'bold',
   },
   productList: {
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   productRow: {
     justifyContent: 'space-between',
-    marginBottom: 12,
+    gap: 14,
+    marginBottom: 0,
   },
   productCard: {
     width: '48%',

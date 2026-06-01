@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, FlatList, StyleSheet, RefreshControl, Platform } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../services/supabaseClient';
 
@@ -226,21 +226,21 @@ export default function OrderTrackingScreen(props: Readonly<OrderTrackingScreenP
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: 15 },
-  title: { fontSize: 18, fontWeight: 'bold', color: COLORS.textPrimary, marginVertical: 15 },
+  container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: 12, paddingTop: Platform.OS === 'android' ? 10 : 0 },
+  title: { fontSize: 18, fontWeight: 'bold', color: COLORS.textPrimary, marginVertical: 12, marginBottom: 10 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { fontSize: 14, color: COLORS.textTertiary },
   orderCard: { backgroundColor: COLORS.surface, borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: COLORS.border },
-  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomColor: COLORS.border, borderBottomWidth: 1 },
+  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 10, borderBottomColor: COLORS.border, borderBottomWidth: 1 },
   orderTime: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '600' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   statusText: { color: '#fff', fontWeight: 'bold', fontSize: 11 },
   itemsList: { marginBottom: 10 },
-  itemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, paddingHorizontal: 8 },
-  itemName: { flex: 1, fontSize: 12, color: COLORS.textPrimary, fontWeight: '500' },
-  itemQty: { fontSize: 12, color: COLORS.textSecondary, marginHorizontal: 8 },
-  itemPrice: { fontSize: 12, color: COLORS.buttonGreen, fontWeight: 'bold', minWidth: 50, textAlign: 'right' },
-  notesSection: { backgroundColor: COLORS.background, borderRadius: 8, padding: 8, marginTop: 10 },
-  notesLabel: { fontSize: 11, fontWeight: 'bold', color: COLORS.textSecondary },
-  notesText: { fontSize: 11, color: COLORS.textPrimary, marginTop: 4 },
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 6 },
+  itemName: { flex: 1, fontSize: 13, color: COLORS.textPrimary, fontWeight: '500' },
+  itemQty: { fontSize: 12, color: COLORS.textSecondary, marginHorizontal: 10, minWidth: 30, textAlign: 'right' },
+  itemPrice: { fontSize: 13, color: COLORS.buttonGreen, fontWeight: 'bold', minWidth: 50, textAlign: 'right' },
+  notesSection: { backgroundColor: COLORS.background, borderRadius: 8, padding: 10, marginTop: 10 },
+  notesLabel: { fontSize: 12, fontWeight: 'bold', color: COLORS.textSecondary },
+  notesText: { fontSize: 12, color: COLORS.textPrimary, marginTop: 4, lineHeight: 18 },
 });
