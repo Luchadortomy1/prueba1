@@ -1,15 +1,13 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View, Modal, Text, TouchableOpacity } from 'react-native';
 import { COLORS } from '../constants/colors';
 
 interface CheckoutModalProps {
   visible: boolean;
-  cartTotal: number;
+  sessionTotal: number;
   selectedTable?: number;
   onClose: () => void;
   onConfirm: () => void;
-  onRefresh?: () => Promise<number>;
-  serverTotal?: number;
 }
 
 const PAYMENT_METHODS = [
@@ -17,28 +15,8 @@ const PAYMENT_METHODS = [
   { id: 'card', icon: '💳', label: 'Tarjeta' },
 ];
 
-export default function CheckoutModal({ visible, cartTotal, selectedTable = 0, onClose, onConfirm, onRefresh, serverTotal: serverTotalProp }: Readonly<CheckoutModalProps>) {
+export default function CheckoutModal({ visible, sessionTotal, selectedTable = 0, onClose, onConfirm }: Readonly<CheckoutModalProps>) {
   const [selectedPayment, setSelectedPayment] = useState('cash');
-  const [serverTotalLocal, setServerTotalLocal] = useState<number>(0);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const cartTotal_val = cartTotal;
-  const displayedServerTotal = typeof serverTotalProp === 'number' ? serverTotalProp : serverTotalLocal;
-  const subtotal = cartTotal_val + (displayedServerTotal || 0);
-  const total = subtotal;
-
-  const handleRefresh = async () => {
-    if (!onRefresh) return;
-    try {
-      setRefreshing(true);
-      const val = await onRefresh();
-      setServerTotalLocal(Number(val || 0));
-    } catch (err) {
-      console.log('Error refreshing checkout total:', err);
-    } finally {
-      setRefreshing(false);
-    }
-  };
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -47,25 +25,15 @@ export default function CheckoutModal({ visible, cartTotal, selectedTable = 0, o
           <Text style={styles.title}>Cobrar</Text>
           <Text style={styles.subtitle}>Mesa {selectedTable}</Text>
 
-          {/* TOTALS SECTION - Always visible */}
+          {/* TOTAL */}
           <View style={styles.totalsSection}>
             <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Carrito</Text>
-              <Text style={styles.totalValue}>${cartTotal_val.toFixed(2)}</Text>
-            </View>
-            {displayedServerTotal > 0 && (
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>En Cocina</Text>
-                <Text style={styles.totalValue}>${displayedServerTotal.toFixed(2)}</Text>
-              </View>
-            )}
-            <View style={[styles.totalRow, styles.totalRowBold]}>
-              <Text style={styles.totalLabelBold}>TOTAL</Text>
-              <Text style={styles.totalValueBold}>${total.toFixed(2)}</Text>
+              <Text style={styles.totalLabelBold}>TOTAL A COBRAR</Text>
+              <Text style={styles.totalValueBold}>${sessionTotal.toFixed(2)}</Text>
             </View>
           </View>
 
-          {/* PAYMENT SECTION */}
+          {/* MÉTODO DE PAGO */}
           <View style={styles.paymentSection}>
             <Text style={styles.sectionTitle}>Método de Pago</Text>
             <View style={styles.paymentGrid}>
@@ -84,15 +52,7 @@ export default function CheckoutModal({ visible, cartTotal, selectedTable = 0, o
             </View>
           </View>
 
-          {/* BUTTONS SECTION */}
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#f0f0f0', marginBottom: 10 }]}
-            onPress={handleRefresh}
-            disabled={!onRefresh || refreshing}
-          >
-            <Text style={{ fontWeight: '700', color: COLORS.textPrimary }}>{refreshing ? 'Actualizando...' : '🔄 Refrescar'}</Text>
-          </TouchableOpacity>
-          
+          {/* BOTONES */}
           <View style={styles.buttonsContainer}>
             <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={onClose}>
               <Text style={styles.cancelBtnText}>Cancelar</Text>
@@ -112,18 +72,13 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 22, width: '100%', maxWidth: 420 },
   title: { fontSize: 26, fontWeight: 'bold', color: COLORS.textPrimary, textAlign: 'center', marginBottom: 4 },
   subtitle: { fontSize: 15, color: COLORS.textSecondary, textAlign: 'center', marginBottom: 20 },
-  
-  /* TOTALS SECTION */
-  totalsSection: { backgroundColor: COLORS.background, borderRadius: 14, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomColor: COLORS.border, borderBottomWidth: 0.5 },
-  totalRowBold: { borderBottomWidth: 0, borderTopColor: COLORS.border, borderTopWidth: 1, marginTop: 6, paddingTop: 14 },
-  totalLabel: { fontSize: 15, color: COLORS.textSecondary, fontWeight: '500' },
-  totalLabelBold: { fontSize: 17, fontWeight: 'bold', color: COLORS.textPrimary },
-  totalValue: { fontSize: 15, color: COLORS.textPrimary, fontWeight: '700' },
-  totalValueBold: { fontSize: 22, fontWeight: 'bold', color: COLORS.buttonGreen },
-  
-  /* PAYMENT SECTION */
-  paymentSection: { marginBottom: 20 },
+
+  totalsSection: { backgroundColor: COLORS.background, borderRadius: 14, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  totalLabelBold: { fontSize: 15, fontWeight: '700', color: COLORS.textPrimary },
+  totalValueBold: { fontSize: 28, fontWeight: 'bold', color: COLORS.buttonGreen },
+
+  paymentSection: { marginBottom: 24 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 12 },
   paymentGrid: { flexDirection: 'row', gap: 14 },
   paymentBtn: { flex: 1, paddingVertical: 16, borderRadius: 12, backgroundColor: COLORS.background, borderColor: COLORS.border, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
@@ -131,8 +86,7 @@ const styles = StyleSheet.create({
   paymentIcon: { fontSize: 28, marginBottom: 6 },
   paymentLabel: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary, textAlign: 'center' },
   paymentLabelSelected: { color: '#fff', fontWeight: 'bold' },
-  
-  /* BUTTONS */
+
   button: { paddingVertical: 15, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   buttonsContainer: { flexDirection: 'row', gap: 12 },
   cancelBtn: { flex: 1, backgroundColor: COLORS.buttonRed },

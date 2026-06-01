@@ -164,6 +164,7 @@ export default function App() {
   const [tableCartItems, setTableCartItems] = useState<{ [key: number]: any[] }>({});
   const [tableOrders, setTableOrders] = useState<{ [key: number]: { items: any[], history: any[] } }>({});
   const [tableServerTotals, setTableServerTotals] = useState<{ [key: number]: number }>({});
+  const [tableSessionStart, setTableSessionStart] = useState<{ [key: number]: string }>({});
   const [showProductModal, setShowProductModal] = useState(false);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showOrderDetailModal, setShowOrderDetailModal] = useState(false);
@@ -176,10 +177,12 @@ export default function App() {
     setSelectedProductOptions(options);
   };
 
-  const initializeTable = (tableId: string, tableNumber: number) => {
-    // Reset cart and orders for the table every time a table is initialized
-    setTableCartItems(prev => ({ ...prev, [tableNumber]: [] }));
-    setTableOrders(prev => ({ ...prev, [tableNumber]: { items: [], history: [] } }));
+  const initializeTable = (tableId: string, tableNumber: number, isNew = false) => {
+    if (isNew) {
+      setTableCartItems(prev => ({ ...prev, [tableNumber]: [] }));
+      setTableOrders(prev => ({ ...prev, [tableNumber]: { items: [], history: [] } }));
+      setTableSessionStart(prev => ({ ...prev, [tableNumber]: new Date().toISOString() }));
+    }
     setSelectedTable({ id: tableId, table_number: tableNumber });
   };
 
@@ -277,8 +280,9 @@ export default function App() {
         return;
       }
 
-      // Get all orders from current session (completed ones)
-      const sessionOrders = await getOrdersByTable(selectedTable.id, true);
+      // Get all orders from current session only (using session start timestamp)
+      const sessionStart = tableSessionStart[selectedTable.table_number];
+      const sessionOrders = await getOrdersByTable(selectedTable.id, true, sessionStart);
       const sessionTotal = (sessionOrders || []).reduce((s: number, ord: any) => {
         const ordTotal = ord.total_amount ?? (ord.order_items?.reduce((ss: number, it: any) => ss + (it.subtotal || (it.unit_price * it.quantity)), 0) || 0);
         return s + Number(ordTotal || 0);
@@ -351,7 +355,7 @@ export default function App() {
         restaurantId={user.restaurant_id}
         waiterId={user.id}
         onLogout={() => setUser(null)}
-        onSelectTable={(table) => initializeTable(table.id, table.table_number)}
+        onSelectTable={(table, isNew) => initializeTable(table.id, table.table_number, isNew)}
         refreshKey={tablesRefreshKey}
       />
     );
@@ -377,6 +381,7 @@ export default function App() {
         onRefreshCheckout={handleRefreshCheckout}
         serverTotalOverride={tableServerTotals[selectedTable.table_number] || 0}
         onBackToTables={() => setSelectedTable(null)}
+        sessionStart={tableSessionStart[selectedTable.table_number]}
       />
 
       <ProductModal 
@@ -397,7 +402,7 @@ export default function App() {
       />
 
       {cartCount > 0 && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.orderBar}
           onPress={() => setShowOrderDetailModal(true)}
         >

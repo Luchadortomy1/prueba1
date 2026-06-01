@@ -135,20 +135,29 @@ export async function completeOrder(
   }
 }
 
-export async function getOrdersByTable(tableId: string, includeCompleted = false): Promise<Order[]> {
+export async function getOrdersByTable(tableId: string, includeCompleted = false, fromDate?: string): Promise<Order[]> {
   try {
     let query = supabase
       .from('orders')
       .select(`
         *,
-        order_items (*)
+        order_items (
+          id,
+          quantity,
+          unit_price,
+          subtotal,
+          products (name)
+        )
       `)
       .eq('table_id', tableId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: true });
 
     if (!includeCompleted) {
-      // Only fetch active orders (not completed)
       query = query.not('status', 'eq', 'completed');
+    }
+
+    if (fromDate) {
+      query = query.gte('created_at', fromDate);
     }
 
     const { data, error } = await query;

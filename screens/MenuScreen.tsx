@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, ScrollView, Text, TouchableOpacity, FlatList, Image, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, ScrollView, Text, TouchableOpacity, FlatList, Image, ActivityIndicator, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { getProducts, getCategories, getProductCategories } from '../services/productService';
 
@@ -15,6 +15,7 @@ interface MenuScreenProps {
   onSelectProduct: (product: any) => void;
   onOpenProductModal: (visible: boolean) => void;
   onBackToTables: () => void;
+  onQuickAdd: (product: any) => void;
 }
 
 export default function MenuScreen({
@@ -23,6 +24,7 @@ export default function MenuScreen({
   onSelectProduct,
   onOpenProductModal,
   onBackToTables,
+  onQuickAdd,
 }: Readonly<MenuScreenProps>) {
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -122,29 +124,32 @@ export default function MenuScreen({
             <FlatList
               data={filteredProducts}
               keyExtractor={item => item.id}
-              numColumns={2}
-              columnWrapperStyle={styles.productRow}
+              key={filteredProducts.length === 1 ? 'single' : 'grid'}
+              numColumns={filteredProducts.length === 1 ? 1 : 2}
+              columnWrapperStyle={filteredProducts.length > 1 ? styles.productRow : undefined}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.productCard}
-                  onPress={() => handleProductPress(item)}
-                >
-                  {item.image_url ? (
-                    <Image
-                      source={{ uri: item.image_url }}
-                      style={styles.productImage}
-                    />
-                  ) : (
-                    <View style={[styles.productImage, styles.productImagePlaceholder]}>
-                      <Text style={styles.productImagePlaceholderText}>Sin imagen</Text>
-                    </View>
-                  )}
-                  <Text style={styles.productName}>{item.name}</Text>
-                  <Text style={styles.productPrice}>${item.base_price}</Text>
-                  <TouchableOpacity style={styles.addButton}>
+                <View style={[styles.productCard, filteredProducts.length === 1 && styles.productCardWide]}>
+                  <TouchableOpacity
+                    onPress={() => handleProductPress(item)}
+                    activeOpacity={0.8}
+                  >
+                    {item.image_url ? (
+                      <Image
+                        source={{ uri: item.image_url }}
+                        style={[styles.productImage, filteredProducts.length === 1 && styles.productImageWide]}
+                      />
+                    ) : (
+                      <View style={[styles.productImage, styles.productImagePlaceholder, filteredProducts.length === 1 && styles.productImageWide]}>
+                        <Text style={styles.productImagePlaceholderText}>Sin imagen</Text>
+                      </View>
+                    )}
+                    <Text style={styles.productName}>{item.name}</Text>
+                    <Text style={styles.productPrice}>${item.base_price}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.addButton} onPress={() => onQuickAdd(item)}>
                     <Text style={styles.addButtonText}>+ Agregar</Text>
                   </TouchableOpacity>
-                </TouchableOpacity>
+                </View>
               )}
               contentContainerStyle={styles.productList}
               scrollEnabled={true}
@@ -164,7 +169,8 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: COLORS.surface,
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingTop: Platform.OS === 'android' ? ((RNStatusBar.currentHeight ?? 0) + 14) : 14,
+    paddingBottom: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -194,27 +200,32 @@ const styles = StyleSheet.create({
   },
   categoriesScroll: {
     backgroundColor: COLORS.surface,
-    maxHeight: 75,
+    flexGrow: 0,
+    flexShrink: 0,
     borderBottomColor: COLORS.border,
     borderBottomWidth: 1,
-    paddingVertical: 4,
   },
   categoriesContainer: {
     flexDirection: 'row',
     paddingHorizontal: 14,
-    gap: 12,
+    gap: 10,
     alignItems: 'center',
   },
-  categoriesScrollContent: { alignItems: 'center', paddingVertical: 8 },
+  categoriesScrollContent: {
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 10,
+  },
   categoryTag: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
     backgroundColor: COLORS.border,
     borderWidth: 1.5,
     borderColor: COLORS.border,
     alignSelf: 'center',
-    minHeight: 40,
+    minHeight: 36,
     justifyContent: 'center',
     flexShrink: 0,
   },
@@ -234,11 +245,11 @@ const styles = StyleSheet.create({
   productList: {
     paddingHorizontal: 14,
     paddingVertical: 14,
+    gap: 14,
   },
   productRow: {
     justifyContent: 'space-between',
     gap: 14,
-    marginBottom: 0,
   },
   productCard: {
     width: '48%',
@@ -248,10 +259,16 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     borderWidth: 1,
   },
+  productCardWide: {
+    width: '100%',
+  },
   productImage: {
     width: '100%',
     height: 120,
     backgroundColor: COLORS.background,
+  },
+  productImageWide: {
+    height: 180,
   },
   productImagePlaceholder: {
     justifyContent: 'center',

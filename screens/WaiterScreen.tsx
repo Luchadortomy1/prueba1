@@ -9,6 +9,8 @@ import {
   Modal,
   TextInput,
   Alert,
+  Platform,
+  StatusBar as RNStatusBar,
 } from 'react-native';
 import { COLORS } from '../constants/colors';
 import { supabase } from '../services/supabaseClient';
@@ -25,7 +27,7 @@ interface WaiterScreenProps {
   restaurantId: string;
   waiterId: string;
   onLogout: () => void;
-  onSelectTable: (table: Table) => void;
+  onSelectTable: (table: Table, isNew?: boolean) => void;
   refreshKey?: number;
 }
 
@@ -88,8 +90,7 @@ export default function WaiterScreen(props: Readonly<WaiterScreenProps>) {
       setSelectedTable(table);
       setShowGuestModal(true);
     } else {
-      // Si ya está ocupada, abrir la orden existente
-      onSelectTable(table);
+      onSelectTable(table, false);
     }
   };
 
@@ -114,7 +115,7 @@ export default function WaiterScreen(props: Readonly<WaiterScreenProps>) {
     }
 
     setShowGuestModal(false);
-    onSelectTable(selectedTable);
+    onSelectTable(selectedTable, true);
   };
 
   const getStatusColor = (status: string) => {
@@ -238,12 +239,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    paddingTop: 5,
   },
   header: {
     backgroundColor: COLORS.surface,
     paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingTop: Platform.OS === 'android' ? ((RNStatusBar.currentHeight ?? 0) + 14) : 14,
+    paddingBottom: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -275,17 +276,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   listContent: {
-    padding: 16,
-    gap: 15,
+    padding: 10,
   },
   tableRow: {
-    justifyContent: 'space-between',
-    gap: 14,
+    justifyContent: 'flex-start',
   },
   tableCard: {
-    width: '32%',
+    width: '30%',
     aspectRatio: 1,
     borderRadius: 12,
+    marginHorizontal: '1.5%',
+    marginVertical: 6,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
